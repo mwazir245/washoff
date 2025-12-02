@@ -17,11 +17,12 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
 import Layout from "@/components/layout/Layout";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const mockOrder = {
   items: [
-    { name: "Regular Washing", qty: 3, price: 3.5, unit: "kg" },
-    { name: "Ironing", qty: 5, price: 2.0, unit: "items" },
+    { name: "Regular Washing", nameAr: "غسيل عادي", qty: 3, price: 3.5, unit: "kg", unitAr: "كجم" },
+    { name: "Ironing", nameAr: "كي", qty: 5, price: 2.0, unit: "items", unitAr: "قطع" },
   ],
   subtotal: 20.5,
   deliveryFee: 2.0,
@@ -38,6 +39,7 @@ const timeSlots = [
 
 const Order = () => {
   const navigate = useNavigate();
+  const { t, language, isRTL } = useLanguage();
   const [pickupDate, setPickupDate] = useState("");
   const [pickupTime, setPickupTime] = useState("");
   const [deliveryDate, setDeliveryDate] = useState("");
@@ -58,10 +60,10 @@ const Order = () => {
             <div className="flex items-center gap-4">
               <Link to="/laundries">
                 <Button variant="ghost" size="icon">
-                  <ArrowLeft className="h-5 w-5" />
+                  <ArrowLeft className={`h-5 w-5 ${isRTL ? 'rotate-180' : ''}`} />
                 </Button>
               </Link>
-              <h1 className="text-xl font-semibold">Checkout</h1>
+              <h1 className="text-xl font-semibold">{t("order.checkout")}</h1>
             </div>
           </div>
         </div>
@@ -74,17 +76,17 @@ const Order = () => {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <MapPin className="h-5 w-5 text-primary" />
-                    Delivery Address
+                    {t("order.deliveryAddress")}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <Input
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
-                    placeholder="Enter your address"
+                    placeholder={t("order.deliveryAddress")}
                   />
                   <Button variant="link" className="mt-2 p-0 h-auto text-primary">
-                    Use current location
+                    {t("order.useCurrentLocation")}
                   </Button>
                 </CardContent>
               </Card>
@@ -94,12 +96,12 @@ const Order = () => {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Calendar className="h-5 w-5 text-primary" />
-                    Pickup Schedule
+                    {t("order.pickupSchedule")}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
-                    <Label>Pickup Date</Label>
+                    <Label>{t("order.pickupDate")}</Label>
                     <Input
                       type="date"
                       value={pickupDate}
@@ -108,7 +110,7 @@ const Order = () => {
                     />
                   </div>
                   <div>
-                    <Label>Pickup Time</Label>
+                    <Label>{t("order.pickupTime")}</Label>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">
                       {timeSlots.map((slot) => (
                         <Badge
@@ -130,12 +132,12 @@ const Order = () => {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Clock className="h-5 w-5 text-primary" />
-                    Delivery Schedule
+                    {t("order.deliverySchedule")}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
-                    <Label>Delivery Date</Label>
+                    <Label>{t("order.deliveryDate")}</Label>
                     <Input
                       type="date"
                       value={deliveryDate}
@@ -144,7 +146,7 @@ const Order = () => {
                     />
                   </div>
                   <div>
-                    <Label>Delivery Time</Label>
+                    <Label>{t("order.deliveryTime")}</Label>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">
                       {timeSlots.map((slot) => (
                         <Badge
@@ -166,7 +168,7 @@ const Order = () => {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <CreditCard className="h-5 w-5 text-primary" />
-                    Payment Method
+                    {t("order.paymentMethod")}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -186,7 +188,7 @@ const Order = () => {
                       <RadioGroupItem value="card" id="card" />
                       <CreditCard className="h-5 w-5 text-muted-foreground" />
                       <Label htmlFor="card" className="flex-1 cursor-pointer">
-                        Credit / Debit Card
+                        {t("order.creditCard")}
                       </Label>
                     </div>
                     <div
@@ -200,7 +202,7 @@ const Order = () => {
                       <RadioGroupItem value="apple" id="apple" />
                       <Apple className="h-5 w-5 text-muted-foreground" />
                       <Label htmlFor="apple" className="flex-1 cursor-pointer">
-                        Apple Pay / STC Pay
+                        {t("order.applePay")}
                       </Label>
                     </div>
                     <div
@@ -214,7 +216,7 @@ const Order = () => {
                       <RadioGroupItem value="cash" id="cash" />
                       <Banknote className="h-5 w-5 text-muted-foreground" />
                       <Label htmlFor="cash" className="flex-1 cursor-pointer">
-                        Cash on Delivery
+                        {t("order.cashOnDelivery")}
                       </Label>
                     </div>
                   </RadioGroup>
@@ -226,35 +228,35 @@ const Order = () => {
             <div className="lg:col-span-1">
               <Card className="sticky top-36">
                 <CardHeader>
-                  <CardTitle>Order Summary</CardTitle>
+                  <CardTitle>{t("order.orderSummary")}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {mockOrder.items.map((item, index) => (
                     <div key={index} className="flex justify-between text-sm">
                       <span className="text-muted-foreground">
-                        {item.name} x {item.qty} {item.unit}
+                        {language === 'ar' ? item.nameAr : item.name} x {item.qty} {language === 'ar' ? item.unitAr : item.unit}
                       </span>
                       <span className="font-medium">
-                        ${(item.price * item.qty).toFixed(2)}
+                        {(item.price * item.qty).toFixed(2)} {t("currency.symbol")}
                       </span>
                     </div>
                   ))}
                   
                   <div className="border-t border-border pt-4 space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Subtotal</span>
-                      <span>${mockOrder.subtotal.toFixed(2)}</span>
+                      <span className="text-muted-foreground">{t("order.subtotal")}</span>
+                      <span>{mockOrder.subtotal.toFixed(2)} {t("currency.symbol")}</span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Delivery Fee</span>
-                      <span>${mockOrder.deliveryFee.toFixed(2)}</span>
+                      <span className="text-muted-foreground">{t("order.deliveryFee")}</span>
+                      <span>{mockOrder.deliveryFee.toFixed(2)} {t("currency.symbol")}</span>
                     </div>
                   </div>
                   
                   <div className="border-t border-border pt-4">
                     <div className="flex justify-between text-lg font-semibold">
-                      <span>Total</span>
-                      <span className="text-primary">${mockOrder.total.toFixed(2)}</span>
+                      <span>{t("order.total")}</span>
+                      <span className="text-primary">{mockOrder.total.toFixed(2)} {t("currency.symbol")}</span>
                     </div>
                   </div>
                 </CardContent>
@@ -271,9 +273,9 @@ const Order = () => {
               className="w-full justify-between"
               onClick={handlePlaceOrder}
             >
-              <span>Place Order</span>
+              <span>{t("action.placeOrder")}</span>
               <span className="flex items-center gap-2">
-                ${mockOrder.total.toFixed(2)} <ChevronRight className="h-4 w-4" />
+                {mockOrder.total.toFixed(2)} {t("currency.symbol")} <ChevronRight className={`h-4 w-4 ${isRTL ? 'rotate-180' : ''}`} />
               </span>
             </Button>
           </div>

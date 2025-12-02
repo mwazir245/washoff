@@ -7,27 +7,39 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import Layout from "@/components/layout/Layout";
 import { useToast } from "@/hooks/use-toast";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const Rating = () => {
   const { orderId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { t, isRTL } = useLanguage();
   const [rating, setRating] = useState(0);
   const [hoveredRating, setHoveredRating] = useState(0);
   const [feedback, setFeedback] = useState("");
 
+  const getRatingLabel = () => {
+    if (rating === 0) return t("rating.tapToRate");
+    if (rating === 1) return t("rating.poor");
+    if (rating === 2) return t("rating.fair");
+    if (rating === 3) return t("rating.good");
+    if (rating === 4) return t("rating.veryGood");
+    if (rating === 5) return t("rating.excellent");
+    return "";
+  };
+
   const handleSubmit = () => {
     if (rating === 0) {
       toast({
-        title: "Please select a rating",
+        title: t("rating.selectRating"),
         variant: "destructive",
       });
       return;
     }
 
     toast({
-      title: "Thank you for your feedback!",
-      description: "Your rating has been submitted successfully.",
+      title: t("rating.thankYou"),
+      description: t("rating.submitted"),
     });
 
     navigate("/orders");
@@ -42,10 +54,10 @@ const Rating = () => {
             <div className="flex items-center gap-4">
               <Link to="/orders">
                 <Button variant="ghost" size="icon">
-                  <ArrowLeft className="h-5 w-5" />
+                  <ArrowLeft className={`h-5 w-5 ${isRTL ? 'rotate-180' : ''}`} />
                 </Button>
               </Link>
-              <h1 className="text-xl font-semibold">Rate Your Order</h1>
+              <h1 className="text-xl font-semibold">{t("rating.title")}</h1>
             </div>
           </div>
         </div>
@@ -64,10 +76,10 @@ const Rating = () => {
                   <div>
                     <h3 className="font-semibold">Fresh & Clean Laundry</h3>
                     <p className="text-sm text-muted-foreground">
-                      Order #{orderId || "ORD123"}
+                      {t("nav.orders")} #{orderId || "ORD123"}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      3 kg wash, 5 items iron
+                      3 kg {t("service.washing")}, 5 {t("service.ironing")}
                     </p>
                   </div>
                 </div>
@@ -78,7 +90,7 @@ const Rating = () => {
             <Card>
               <CardHeader>
                 <CardTitle className="text-center">
-                  How was your experience?
+                  {t("rating.question")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -106,22 +118,17 @@ const Rating = () => {
 
                 {/* Rating Label */}
                 <p className="text-center text-muted-foreground">
-                  {rating === 0 && "Tap to rate"}
-                  {rating === 1 && "Poor"}
-                  {rating === 2 && "Fair"}
-                  {rating === 3 && "Good"}
-                  {rating === 4 && "Very Good"}
-                  {rating === 5 && "Excellent!"}
+                  {getRatingLabel()}
                 </p>
 
                 {/* Feedback */}
                 <div className="space-y-2">
                   <Label htmlFor="feedback">
-                    Share your experience (optional)
+                    {t("rating.feedbackLabel")}
                   </Label>
                   <Textarea
                     id="feedback"
-                    placeholder="Tell us what you liked or what we can improve..."
+                    placeholder={t("rating.feedbackPlaceholder")}
                     value={feedback}
                     onChange={(e) => setFeedback(e.target.value)}
                     rows={4}
@@ -130,7 +137,7 @@ const Rating = () => {
 
                 {/* Submit Button */}
                 <Button className="w-full" size="lg" onClick={handleSubmit}>
-                  Submit Rating
+                  {t("rating.submit")}
                 </Button>
 
                 <Button
@@ -138,7 +145,7 @@ const Rating = () => {
                   className="w-full"
                   onClick={() => navigate("/orders")}
                 >
-                  Skip for now
+                  {t("action.skipForNow")}
                 </Button>
               </CardContent>
             </Card>

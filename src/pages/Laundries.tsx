@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import Layout from "@/components/layout/Layout";
 import LaundryCard from "@/components/laundry/LaundryCard";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const mockLaundries = [
   {
@@ -88,14 +89,27 @@ const mockLaundries = [
   },
 ];
 
-const serviceFilters = ["All", "Washing", "Ironing", "Dry Clean", "Alterations"];
-const sortOptions = ["Nearest", "Top Rated", "Fastest", "Price: Low to High"];
-
 const Laundries = () => {
+  const { t, isRTL } = useLanguage();
   const [search, setSearch] = useState("");
   const [selectedService, setSelectedService] = useState("All");
   const [selectedSort, setSelectedSort] = useState("Nearest");
   const [showFilters, setShowFilters] = useState(false);
+
+  const serviceFilters = [
+    { key: "All", label: t("laundries.all") },
+    { key: "Washing", label: t("service.washing") },
+    { key: "Ironing", label: t("service.ironing") },
+    { key: "Dry Clean", label: t("service.dryClean") },
+    { key: "Alterations", label: t("service.alterations") },
+  ];
+
+  const sortOptions = [
+    { key: "Nearest", label: t("laundries.nearest") },
+    { key: "Top Rated", label: t("laundries.topRated") },
+    { key: "Fastest", label: t("laundries.fastest") },
+    { key: "Price: Low to High", label: t("laundries.priceLowHigh") },
+  ];
 
   const filteredLaundries = mockLaundries.filter((laundry) => {
     const matchesSearch = laundry.name.toLowerCase().includes(search.toLowerCase());
@@ -112,10 +126,10 @@ const Laundries = () => {
             {/* Search Bar */}
             <div className="flex gap-3 mb-4">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <Search className={`absolute ${isRTL ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground`} />
                 <Input
-                  placeholder="Search laundries..."
-                  className="pl-10"
+                  placeholder={t("laundries.searchPlaceholder")}
+                  className={isRTL ? 'pr-10' : 'pl-10'}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -132,10 +146,10 @@ const Laundries = () => {
             {/* Location */}
             <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
               <MapPin className="h-4 w-4 text-primary" />
-              <span>Delivering to: </span>
-              <span className="text-foreground font-medium">Current Location</span>
+              <span>{t("laundries.deliveringTo")} </span>
+              <span className="text-foreground font-medium">{t("laundries.currentLocation")}</span>
               <Button variant="link" size="sm" className="h-auto p-0 text-primary">
-                Change
+                {t("action.change")}
               </Button>
             </div>
 
@@ -143,12 +157,12 @@ const Laundries = () => {
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
               {serviceFilters.map((service) => (
                 <Badge
-                  key={service}
-                  variant={selectedService === service ? "default" : "outline"}
+                  key={service.key}
+                  variant={selectedService === service.key ? "default" : "outline"}
                   className="cursor-pointer whitespace-nowrap px-4 py-1.5"
-                  onClick={() => setSelectedService(service)}
+                  onClick={() => setSelectedService(service.key)}
                 >
-                  {service}
+                  {service.label}
                 </Badge>
               ))}
             </div>
@@ -157,7 +171,7 @@ const Laundries = () => {
             {showFilters && (
               <Card className="mt-4 p-4 animate-slide-up">
                 <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-semibold">Sort By</h4>
+                  <h4 className="font-semibold">{t("laundries.sortBy")}</h4>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -169,12 +183,12 @@ const Laundries = () => {
                 <div className="flex flex-wrap gap-2">
                   {sortOptions.map((option) => (
                     <Badge
-                      key={option}
-                      variant={selectedSort === option ? "default" : "outline"}
+                      key={option.key}
+                      variant={selectedSort === option.key ? "default" : "outline"}
                       className="cursor-pointer px-3 py-1.5"
-                      onClick={() => setSelectedSort(option)}
+                      onClick={() => setSelectedSort(option.key)}
                     >
-                      {option}
+                      {option.label}
                     </Badge>
                   ))}
                 </div>
@@ -187,7 +201,7 @@ const Laundries = () => {
         <div className="container mx-auto px-4 py-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-foreground">
-              {filteredLaundries.length} Laundries Found
+              {filteredLaundries.length} {t("laundries.title")}
             </h2>
           </div>
 
@@ -207,10 +221,10 @@ const Laundries = () => {
             <div className="text-center py-16">
               <div className="text-6xl mb-4">🔍</div>
               <h3 className="text-xl font-semibold text-foreground mb-2">
-                No laundries found
+                {t("laundries.noResults")}
               </h3>
               <p className="text-muted-foreground">
-                Try adjusting your search or filters
+                {t("laundries.noResultsDesc")}
               </p>
             </div>
           )}

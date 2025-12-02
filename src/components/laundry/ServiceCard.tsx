@@ -44,8 +44,8 @@ const ServiceCard = ({
               
               {quantity === 0 ? (
                 <Button size="sm" onClick={onAdd} className="h-8">
-                  <Plus className="h-4 w-4 mr-1" />
-                  Add
+                  <Plus className={`h-4 w-4 ${isRTL ? 'ml-1' : 'mr-1'}`} />
+                  {isRTL ? 'إضافة' : 'Add'}
                 </Button>
               ) : (
                 <div className="flex items-center gap-2">

@@ -14,77 +14,79 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Layout from "@/components/layout/Layout";
 import OrderStatusTimeline from "@/components/order/OrderStatusTimeline";
-
-const orderStatuses = [
-  {
-    id: "received",
-    label: "Order Received",
-    description: "Your order has been confirmed",
-    time: "10:30 AM",
-    completed: true,
-    current: false,
-  },
-  {
-    id: "pickup",
-    label: "On the Way to Pickup",
-    description: "Driver is heading to your location",
-    time: "10:45 AM",
-    completed: true,
-    current: false,
-  },
-  {
-    id: "collected",
-    label: "Clothes Collected",
-    description: "Your clothes have been picked up",
-    time: "11:15 AM",
-    completed: true,
-    current: false,
-  },
-  {
-    id: "washing",
-    label: "In Washing",
-    description: "Your clothes are being washed",
-    time: "",
-    completed: false,
-    current: true,
-  },
-  {
-    id: "ironing",
-    label: "In Ironing",
-    description: "Your clothes are being pressed",
-    time: "",
-    completed: false,
-    current: false,
-  },
-  {
-    id: "ready",
-    label: "Ready",
-    description: "Your order is ready for delivery",
-    time: "",
-    completed: false,
-    current: false,
-  },
-  {
-    id: "out_delivery",
-    label: "Out for Delivery",
-    description: "Your clothes are on the way",
-    time: "",
-    completed: false,
-    current: false,
-  },
-  {
-    id: "delivered",
-    label: "Delivered",
-    description: "Your order has been delivered",
-    time: "",
-    completed: false,
-    current: false,
-  },
-];
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const OrderTracking = () => {
   const { orderId } = useParams();
+  const { t, isRTL } = useLanguage();
   const [currentStatus, setCurrentStatus] = useState(3); // washing
+
+  const orderStatuses = [
+    {
+      id: "received",
+      label: t("status.orderReceived"),
+      description: t("status.orderReceived"),
+      time: "10:30 AM",
+      completed: true,
+      current: false,
+    },
+    {
+      id: "pickup",
+      label: t("status.onWayPickup"),
+      description: t("status.onWayPickup"),
+      time: "10:45 AM",
+      completed: true,
+      current: false,
+    },
+    {
+      id: "collected",
+      label: t("status.clothesCollected"),
+      description: t("status.clothesCollected"),
+      time: "11:15 AM",
+      completed: true,
+      current: false,
+    },
+    {
+      id: "washing",
+      label: t("status.inWashing"),
+      description: t("status.inWashing"),
+      time: "",
+      completed: false,
+      current: true,
+    },
+    {
+      id: "ironing",
+      label: t("status.inIroning"),
+      description: t("status.inIroning"),
+      time: "",
+      completed: false,
+      current: false,
+    },
+    {
+      id: "ready",
+      label: t("status.ready"),
+      description: t("status.ready"),
+      time: "",
+      completed: false,
+      current: false,
+    },
+    {
+      id: "out_delivery",
+      label: t("status.outForDelivery"),
+      description: t("status.outForDelivery"),
+      time: "",
+      completed: false,
+      current: false,
+    },
+    {
+      id: "delivered",
+      label: t("status.delivered"),
+      description: t("status.delivered"),
+      time: "",
+      completed: false,
+      current: false,
+    },
+  ];
 
   // Simulate status updates
   useEffect(() => {
@@ -98,7 +100,7 @@ const OrderTracking = () => {
     }, 10000); // Update every 10 seconds for demo
 
     return () => clearInterval(timer);
-  }, []);
+  }, [orderStatuses.length]);
 
   const statuses = orderStatuses.map((status, index) => ({
     ...status,
@@ -117,17 +119,17 @@ const OrderTracking = () => {
               <div className="flex items-center gap-4">
                 <Link to="/">
                   <Button variant="ghost" size="icon">
-                    <ArrowLeft className="h-5 w-5" />
+                    <ArrowLeft className={`h-5 w-5 ${isRTL ? 'rotate-180' : ''}`} />
                   </Button>
                 </Link>
                 <div>
-                  <h1 className="text-lg font-semibold">Order #{orderId?.slice(0, 8)}</h1>
+                  <h1 className="text-lg font-semibold">{t("nav.orders")} #{orderId?.slice(0, 8)}</h1>
                   <p className="text-sm text-muted-foreground">
-                    Estimated delivery: Today, 6:00 PM
+                    {t("tracking.estimatedDelivery")}: {t("tracking.today")}, 6:00 PM
                   </p>
                 </div>
               </div>
-              <Badge variant="success">In Progress</Badge>
+              <Badge variant="success">{t("tracking.inProgress")}</Badge>
             </div>
           </div>
         </div>
@@ -138,7 +140,7 @@ const OrderTracking = () => {
               {/* Status Timeline */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Order Status</CardTitle>
+                  <CardTitle>{t("tracking.orderStatus")}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <OrderStatusTimeline statuses={statuses} />
@@ -150,7 +152,7 @@ const OrderTracking = () => {
                 <div className="h-64 bg-muted flex items-center justify-center">
                   <div className="text-center">
                     <MapPin className="h-12 w-12 text-primary mx-auto mb-2" />
-                    <p className="text-muted-foreground">Live tracking map</p>
+                    <p className="text-muted-foreground">{t("tracking.liveMap")}</p>
                   </div>
                 </div>
               </Card>
@@ -160,7 +162,7 @@ const OrderTracking = () => {
               {/* Laundry Info */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Laundry Service</CardTitle>
+                  <CardTitle className="text-base">{t("tracking.laundryService")}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-4">
@@ -179,11 +181,11 @@ const OrderTracking = () => {
                   <div className="flex gap-2 mt-4">
                     <Button variant="outline" size="sm" className="flex-1 gap-2">
                       <Phone className="h-4 w-4" />
-                      Call
+                      {t("action.call")}
                     </Button>
                     <Button variant="outline" size="sm" className="flex-1 gap-2">
                       <MessageSquare className="h-4 w-4" />
-                      Chat
+                      {t("action.chat")}
                     </Button>
                   </div>
                 </CardContent>
@@ -193,7 +195,7 @@ const OrderTracking = () => {
               {currentStatus >= 6 && (
                 <Card className="animate-scale-in">
                   <CardHeader>
-                    <CardTitle className="text-base">Delivery Partner</CardTitle>
+                    <CardTitle className="text-base">{t("tracking.deliveryPartner")}</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="flex items-center gap-4">
@@ -204,18 +206,18 @@ const OrderTracking = () => {
                         <h4 className="font-semibold">Ahmed M.</h4>
                         <div className="flex items-center gap-1 text-sm text-muted-foreground">
                           <Truck className="h-4 w-4" />
-                          <span>On the way</span>
+                          <span>{t("tracking.onTheWay")}</span>
                         </div>
                       </div>
                     </div>
                     <div className="flex gap-2 mt-4">
                       <Button variant="outline" size="sm" className="flex-1 gap-2">
                         <Phone className="h-4 w-4" />
-                        Call
+                        {t("action.call")}
                       </Button>
                       <Button variant="outline" size="sm" className="flex-1 gap-2">
                         <MessageSquare className="h-4 w-4" />
-                        Chat
+                        {t("action.chat")}
                       </Button>
                     </div>
                   </CardContent>
@@ -225,24 +227,24 @@ const OrderTracking = () => {
               {/* Order Details */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Order Details</CardTitle>
+                  <CardTitle className="text-base">{t("tracking.orderDetails")}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Regular Washing x 3 kg</span>
-                    <span>$10.50</span>
+                    <span className="text-muted-foreground">{t("service.washing")} x 3 kg</span>
+                    <span>10.50 {t("currency.symbol")}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Ironing x 5 items</span>
-                    <span>$10.00</span>
+                    <span className="text-muted-foreground">{t("service.ironing")} x 5</span>
+                    <span>10.00 {t("currency.symbol")}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Delivery Fee</span>
-                    <span>$2.00</span>
+                    <span className="text-muted-foreground">{t("order.deliveryFee")}</span>
+                    <span>2.00 {t("currency.symbol")}</span>
                   </div>
                   <div className="border-t border-border pt-3 flex justify-between font-semibold">
-                    <span>Total</span>
-                    <span className="text-primary">$22.50</span>
+                    <span>{t("order.total")}</span>
+                    <span className="text-primary">22.50 {t("currency.symbol")}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -252,7 +254,7 @@ const OrderTracking = () => {
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-primary" />
-                    Delivery Address
+                    {t("order.deliveryAddress")}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>

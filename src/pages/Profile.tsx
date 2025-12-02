@@ -25,25 +25,25 @@ const Profile = () => {
   const menuItems = [
     {
       icon: MapPin,
-      label: t("profile.settings"),
+      label: t("profile.addresses"),
       href: "/profile/addresses",
       badge: "2",
     },
     {
       icon: CreditCard,
-      label: t("footer.pricing"),
+      label: t("profile.payments"),
       href: "/profile/payments",
       badge: null,
     },
     {
       icon: Heart,
-      label: t("footer.forCustomers"),
+      label: t("profile.favorites"),
       href: "/profile/favorites",
       badge: "3",
     },
     {
       icon: Bell,
-      label: t("profile.settings"),
+      label: t("profile.notifications"),
       href: "/profile/notifications",
       badge: null,
     },
@@ -55,7 +55,7 @@ const Profile = () => {
     },
     {
       icon: FileText,
-      label: t("footer.support"),
+      label: t("profile.terms"),
       href: "/terms",
       badge: null,
     },
@@ -104,7 +104,7 @@ const Profile = () => {
               <CardContent className="p-4 text-center">
                 <Heart className="h-6 w-6 text-destructive mx-auto mb-2" />
                 <div className="text-2xl font-bold">3</div>
-                <div className="text-xs text-muted-foreground">{t("stats.laundries")}</div>
+                <div className="text-xs text-muted-foreground">{t("profile.favorites")}</div>
               </CardContent>
             </Card>
           </div>
