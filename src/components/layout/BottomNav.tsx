@@ -1,14 +1,16 @@
 import { Link, useLocation } from "react-router-dom";
 import { Home, Search, Package, User } from "lucide-react";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const BottomNav = () => {
   const location = useLocation();
+  const { t } = useLanguage();
 
   const navItems = [
-    { icon: Home, label: "Home", href: "/" },
-    { icon: Search, label: "Explore", href: "/laundries" },
-    { icon: Package, label: "Orders", href: "/orders" },
-    { icon: User, label: "Profile", href: "/profile" },
+    { icon: Home, label: t("nav.home"), href: "/" },
+    { icon: Search, label: t("nav.explore"), href: "/laundries" },
+    { icon: Package, label: t("nav.orders"), href: "/orders" },
+    { icon: User, label: t("nav.profile"), href: "/profile" },
   ];
 
   return (

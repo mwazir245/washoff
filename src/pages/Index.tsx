@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Layout from "@/components/layout/Layout";
 import LaundryCard from "@/components/laundry/LaundryCard";
+import { useLanguage } from "@/contexts/LanguageContext";
 import logo from "@/assets/logo.png";
 
 const mockLaundries = [
@@ -51,31 +52,38 @@ const mockLaundries = [
   },
 ];
 
-const features = [
-  {
-    icon: Clock,
-    title: "Quick Turnaround",
-    description: "Get your clothes back clean and fresh within hours",
-  },
-  {
-    icon: Truck,
-    title: "Free Pickup & Delivery",
-    description: "We come to you - no need to leave your home",
-  },
-  {
-    icon: Shield,
-    title: "Quality Guaranteed",
-    description: "Professional care for all your garments",
-  },
-  {
-    icon: Sparkles,
-    title: "Eco-Friendly",
-    description: "Sustainable cleaning practices and products",
-  },
-];
-
 const Index = () => {
   const [location, setLocation] = useState("");
+  const { t, isRTL } = useLanguage();
+
+  const features = [
+    {
+      icon: Clock,
+      title: t("features.quickTurnaround"),
+      description: t("features.quickTurnaroundDesc"),
+    },
+    {
+      icon: Truck,
+      title: t("features.freeDelivery"),
+      description: t("features.freeDeliveryDesc"),
+    },
+    {
+      icon: Shield,
+      title: t("features.qualityGuaranteed"),
+      description: t("features.qualityGuaranteedDesc"),
+    },
+    {
+      icon: Sparkles,
+      title: t("features.ecoFriendly"),
+      description: t("features.ecoFriendlyDesc"),
+    },
+  ];
+
+  const steps = [
+    { step: "1", title: t("howItWorks.step1.title"), desc: t("howItWorks.step1.desc") },
+    { step: "2", title: t("howItWorks.step2.title"), desc: t("howItWorks.step2.desc") },
+    { step: "3", title: t("howItWorks.step3.title"), desc: t("howItWorks.step3.desc") },
+  ];
 
   return (
     <Layout>
@@ -83,8 +91,8 @@ const Index = () => {
       <section className="relative overflow-hidden bg-gradient-hero min-h-[600px] flex items-center">
         {/* Background decoration */}
         <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute -top-40 -right-40 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
-          <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-accent/50 rounded-full blur-3xl" />
+          <div className={`absolute -top-40 ${isRTL ? '-left-40' : '-right-40'} w-96 h-96 bg-primary/10 rounded-full blur-3xl`} />
+          <div className={`absolute -bottom-40 ${isRTL ? '-right-40' : '-left-40'} w-96 h-96 bg-accent/50 rounded-full blur-3xl`} />
         </div>
 
         <div className="container mx-auto px-4 py-20 relative z-10">
@@ -93,11 +101,11 @@ const Index = () => {
               <img src={logo} alt="Wash Off" className="h-20 w-auto" />
             </div>
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-secondary mb-6 animate-fade-in">
-              Laundry Made{" "}
-              <span className="text-gradient">Simple</span>
+              {t("hero.title")}{" "}
+              <span className="text-gradient">{t("hero.titleHighlight")}</span>
             </h1>
             <p className="text-lg md:text-xl text-muted-foreground mb-8 animate-fade-in">
-              Connect with trusted laundry services near you. Fresh, clean clothes delivered to your door.
+              {t("hero.subtitle")}
             </p>
 
             {/* Search Box */}
@@ -105,10 +113,10 @@ const Index = () => {
               <Card className="p-2 shadow-xl">
                 <div className="flex flex-col sm:flex-row gap-2">
                   <div className="relative flex-1">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <MapPin className={`absolute ${isRTL ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground`} />
                     <Input
-                      placeholder="Enter your location"
-                      className="pl-10 border-0 shadow-none bg-muted/50"
+                      placeholder={t("hero.searchPlaceholder")}
+                      className={`${isRTL ? 'pr-10' : 'pl-10'} border-0 shadow-none bg-muted/50`}
                       value={location}
                       onChange={(e) => setLocation(e.target.value)}
                     />
@@ -116,7 +124,7 @@ const Index = () => {
                   <Link to="/laundries">
                     <Button size="lg" className="w-full sm:w-auto gap-2">
                       <Search className="h-4 w-4" />
-                      Find Laundries
+                      {t("hero.searchButton")}
                     </Button>
                   </Link>
                 </div>
@@ -127,16 +135,16 @@ const Index = () => {
             <div className="flex flex-wrap justify-center gap-8 mt-12 animate-fade-in">
               <div className="text-center">
                 <div className="text-3xl font-bold text-primary">500+</div>
-                <div className="text-sm text-muted-foreground">Laundries</div>
+                <div className="text-sm text-muted-foreground">{t("stats.laundries")}</div>
               </div>
               <div className="text-center">
                 <div className="text-3xl font-bold text-primary">50K+</div>
-                <div className="text-sm text-muted-foreground">Happy Customers</div>
+                <div className="text-sm text-muted-foreground">{t("stats.happyCustomers")}</div>
               </div>
               <div className="text-center">
                 <div className="text-3xl font-bold text-primary">4.8</div>
-                <div className="text-sm text-muted-foreground flex items-center gap-1">
-                  <Star className="h-4 w-4 fill-warning text-warning" /> Average Rating
+                <div className="text-sm text-muted-foreground flex items-center gap-1 justify-center">
+                  <Star className="h-4 w-4 fill-warning text-warning" /> {t("stats.averageRating")}
                 </div>
               </div>
             </div>
@@ -148,9 +156,9 @@ const Index = () => {
       <section className="py-16 md:py-24 bg-card">
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
-            <Badge variant="soft" className="mb-4">Why Choose Us</Badge>
+            <Badge variant="soft" className="mb-4">{t("features.badge")}</Badge>
             <h2 className="text-3xl md:text-4xl font-bold text-foreground">
-              The Smarter Way to Do Laundry
+              {t("features.title")}
             </h2>
           </div>
 
@@ -179,15 +187,15 @@ const Index = () => {
           <div className="flex items-center justify-between mb-8">
             <div>
               <h2 className="text-2xl md:text-3xl font-bold text-foreground">
-                Laundries Near You
+                {t("nearby.title")}
               </h2>
               <p className="text-muted-foreground mt-1">
-                Top-rated services in your area
+                {t("nearby.subtitle")}
               </p>
             </div>
             <Link to="/laundries">
               <Button variant="ghost" className="gap-2">
-                View All <ChevronRight className="h-4 w-4" />
+                {t("nearby.viewAll")} <ChevronRight className={`h-4 w-4 ${isRTL ? 'rotate-180' : ''}`} />
               </Button>
             </Link>
           </div>
@@ -211,19 +219,15 @@ const Index = () => {
         <div className="container mx-auto px-4">
           <div className="text-center mb-12">
             <Badge variant="soft" className="mb-4 bg-secondary-foreground/10 text-secondary-foreground">
-              How It Works
+              {t("howItWorks.badge")}
             </Badge>
             <h2 className="text-3xl md:text-4xl font-bold">
-              Fresh Clothes in 3 Easy Steps
+              {t("howItWorks.title")}
             </h2>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-            {[
-              { step: "1", title: "Schedule Pickup", desc: "Choose a time that works for you" },
-              { step: "2", title: "We Clean", desc: "Professional care for your garments" },
-              { step: "3", title: "Delivered Fresh", desc: "Clean clothes right to your door" },
-            ].map((item, index) => (
+            {steps.map((item) => (
               <div key={item.step} className="text-center">
                 <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-secondary-foreground/10 flex items-center justify-center text-2xl font-bold">
                   {item.step}
@@ -237,7 +241,7 @@ const Index = () => {
           <div className="text-center mt-12">
             <Link to="/laundries">
               <Button variant="hero" size="xl" className="bg-primary-foreground text-secondary hover:bg-primary-foreground/90">
-                Get Started Now
+                {t("howItWorks.cta")}
               </Button>
             </Link>
           </div>
@@ -252,20 +256,20 @@ const Index = () => {
               <div className="grid md:grid-cols-2 gap-8 items-center">
                 <div>
                   <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
-                    Own a Laundry Business?
+                    {t("cta.title")}
                   </h2>
                   <p className="text-muted-foreground mb-6">
-                    Join Wash Off and reach thousands of customers looking for quality laundry services. Grow your business with our platform.
+                    {t("cta.description")}
                   </p>
                   <Link to="/provider/register">
                     <Button variant="hero" size="lg">
-                      Partner With Us
+                      {t("cta.button")}
                     </Button>
                   </Link>
                 </div>
                 <div className="hidden md:flex justify-center">
                   <div className="relative">
-                    <div className="w-64 h-64 bg-primary/20 rounded-full absolute -top-8 -right-8 blur-2xl" />
+                    <div className={`w-64 h-64 bg-primary/20 rounded-full absolute -top-8 ${isRTL ? '-left-8' : '-right-8'} blur-2xl`} />
                     <img
                       src="https://images.unsplash.com/photo-1545173168-9f1947eebb7f?w=400&h=400&fit=crop"
                       alt="Laundry service"
@@ -286,37 +290,37 @@ const Index = () => {
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <img src={logo} alt="Wash Off" className="h-8 w-auto brightness-0 invert" />
-                <span className="text-xl font-bold">Wash Off</span>
+                <span className="text-xl font-bold">{t("app.name")}</span>
               </div>
               <p className="text-secondary-foreground/70 text-sm">
-                The smarter way to get your laundry done. Connect with trusted services near you.
+                {t("app.tagline")}
               </p>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">For Customers</h4>
+              <h4 className="font-semibold mb-4">{t("footer.forCustomers")}</h4>
               <ul className="space-y-2 text-sm text-secondary-foreground/70">
-                <li><Link to="/laundries" className="hover:text-secondary-foreground">Find Laundries</Link></li>
-                <li><Link to="/how-it-works" className="hover:text-secondary-foreground">How It Works</Link></li>
-                <li><Link to="/pricing" className="hover:text-secondary-foreground">Pricing</Link></li>
+                <li><Link to="/laundries" className="hover:text-secondary-foreground">{t("footer.findLaundries")}</Link></li>
+                <li><Link to="/how-it-works" className="hover:text-secondary-foreground">{t("footer.howItWorks")}</Link></li>
+                <li><Link to="/pricing" className="hover:text-secondary-foreground">{t("footer.pricing")}</Link></li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">For Business</h4>
+              <h4 className="font-semibold mb-4">{t("footer.forBusiness")}</h4>
               <ul className="space-y-2 text-sm text-secondary-foreground/70">
-                <li><Link to="/provider/register" className="hover:text-secondary-foreground">Partner With Us</Link></li>
-                <li><Link to="/delivery/register" className="hover:text-secondary-foreground">Become a Driver</Link></li>
+                <li><Link to="/provider/register" className="hover:text-secondary-foreground">{t("footer.partnerWithUs")}</Link></li>
+                <li><Link to="/delivery/register" className="hover:text-secondary-foreground">{t("footer.becomeDriver")}</Link></li>
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">Support</h4>
+              <h4 className="font-semibold mb-4">{t("footer.support")}</h4>
               <ul className="space-y-2 text-sm text-secondary-foreground/70">
-                <li><Link to="/help" className="hover:text-secondary-foreground">Help Center</Link></li>
-                <li><Link to="/contact" className="hover:text-secondary-foreground">Contact Us</Link></li>
+                <li><Link to="/help" className="hover:text-secondary-foreground">{t("footer.helpCenter")}</Link></li>
+                <li><Link to="/contact" className="hover:text-secondary-foreground">{t("footer.contactUs")}</Link></li>
               </ul>
             </div>
           </div>
           <div className="border-t border-secondary-foreground/20 mt-8 pt-8 text-center text-sm text-secondary-foreground/70">
-            © 2024 Wash Off. All rights reserved.
+            {t("app.copyright")}
           </div>
         </div>
       </footer>

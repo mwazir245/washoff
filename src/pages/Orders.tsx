@@ -1,10 +1,11 @@
 import { Link } from "react-router-dom";
-import { Package, Clock, Check, ChevronRight } from "lucide-react";
+import { Package, Check, ChevronRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Layout from "@/components/layout/Layout";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const mockOrders = [
   {
@@ -14,7 +15,7 @@ const mockOrders = [
     items: "3 kg wash, 5 items iron",
     total: 22.5,
     status: "in_progress",
-    statusLabel: "In Washing",
+    statusKey: "status.inWashing",
     date: "Today",
   },
   {
@@ -24,7 +25,7 @@ const mockOrders = [
     items: "2 items dry clean",
     total: 16.0,
     status: "out_for_delivery",
-    statusLabel: "Out for Delivery",
+    statusKey: "status.outForDelivery",
     date: "Today",
   },
   {
@@ -34,7 +35,7 @@ const mockOrders = [
     items: "5 kg wash",
     total: 17.5,
     status: "delivered",
-    statusLabel: "Delivered",
+    statusKey: "status.delivered",
     date: "Yesterday",
   },
   {
@@ -44,7 +45,7 @@ const mockOrders = [
     items: "4 items iron, 2 dry clean",
     total: 28.0,
     status: "delivered",
-    statusLabel: "Delivered",
+    statusKey: "status.delivered",
     date: "2 days ago",
   },
 ];
@@ -58,6 +59,7 @@ const statusColors: Record<string, "default" | "warning" | "success" | "muted"> 
 };
 
 const Orders = () => {
+  const { t, isRTL } = useLanguage();
   const activeOrders = mockOrders.filter((o) => o.status !== "delivered");
   const completedOrders = mockOrders.filter((o) => o.status === "delivered");
 
@@ -65,15 +67,15 @@ const Orders = () => {
     <Layout>
       <div className="min-h-screen bg-background">
         <div className="container mx-auto px-4 py-6">
-          <h1 className="text-2xl font-bold text-foreground mb-6">My Orders</h1>
+          <h1 className="text-2xl font-bold text-foreground mb-6">{t("orders.title")}</h1>
 
           <Tabs defaultValue="active">
             <TabsList className="w-full justify-start mb-6">
               <TabsTrigger value="active" className="flex-1 md:flex-none">
-                Active ({activeOrders.length})
+                {t("orders.active")} ({activeOrders.length})
               </TabsTrigger>
               <TabsTrigger value="completed" className="flex-1 md:flex-none">
-                Completed ({completedOrders.length})
+                {t("orders.completed")} ({completedOrders.length})
               </TabsTrigger>
             </TabsList>
 
@@ -82,13 +84,13 @@ const Orders = () => {
                 <div className="text-center py-16">
                   <Package className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
                   <h3 className="text-xl font-semibold text-foreground mb-2">
-                    No active orders
+                    {t("orders.noOrders")}
                   </h3>
                   <p className="text-muted-foreground mb-4">
-                    Your active orders will appear here
+                    {t("orders.noOrders")}
                   </p>
                   <Link to="/laundries">
-                    <Button>Find Laundries</Button>
+                    <Button>{t("nav.findLaundries")}</Button>
                   </Link>
                 </div>
               ) : (
@@ -108,7 +110,7 @@ const Orders = () => {
                                 {order.laundry}
                               </h3>
                               <Badge variant={statusColors[order.status]}>
-                                {order.statusLabel}
+                                {t(order.statusKey)}
                               </Badge>
                             </div>
                             <p className="text-sm text-muted-foreground mb-1">
@@ -123,7 +125,7 @@ const Orders = () => {
                               </span>
                             </div>
                           </div>
-                          <ChevronRight className="h-5 w-5 text-muted-foreground self-center" />
+                          <ChevronRight className={`h-5 w-5 text-muted-foreground self-center ${isRTL ? 'rotate-180' : ''}`} />
                         </div>
                       </CardContent>
                     </Card>
@@ -149,7 +151,7 @@ const Orders = () => {
                           </h3>
                           <Badge variant="success">
                             <Check className="h-3 w-3 mr-1" />
-                            {order.statusLabel}
+                            {t(order.statusKey)}
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground mb-1">
@@ -167,10 +169,7 @@ const Orders = () => {
                     </div>
                     <div className="flex gap-2 mt-4 pt-4 border-t border-border">
                       <Button variant="outline" size="sm" className="flex-1">
-                        Reorder
-                      </Button>
-                      <Button variant="outline" size="sm" className="flex-1">
-                        Rate Order
+                        {t("action.rateOrder")}
                       </Button>
                     </div>
                   </CardContent>

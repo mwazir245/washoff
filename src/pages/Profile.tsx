@@ -11,52 +11,56 @@ import {
   Star,
   Package,
   Heart,
+  Globe,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import Layout from "@/components/layout/Layout";
-
-const menuItems = [
-  {
-    icon: MapPin,
-    label: "Saved Addresses",
-    href: "/profile/addresses",
-    badge: "2",
-  },
-  {
-    icon: CreditCard,
-    label: "Payment Methods",
-    href: "/profile/payments",
-    badge: null,
-  },
-  {
-    icon: Heart,
-    label: "Favorites",
-    href: "/profile/favorites",
-    badge: "3",
-  },
-  {
-    icon: Bell,
-    label: "Notifications",
-    href: "/profile/notifications",
-    badge: null,
-  },
-  {
-    icon: HelpCircle,
-    label: "Help & Support",
-    href: "/help",
-    badge: null,
-  },
-  {
-    icon: FileText,
-    label: "Terms & Privacy",
-    href: "/terms",
-    badge: null,
-  },
-];
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const Profile = () => {
+  const { t, language, setLanguage, isRTL } = useLanguage();
+
+  const menuItems = [
+    {
+      icon: MapPin,
+      label: t("profile.settings"),
+      href: "/profile/addresses",
+      badge: "2",
+    },
+    {
+      icon: CreditCard,
+      label: t("footer.pricing"),
+      href: "/profile/payments",
+      badge: null,
+    },
+    {
+      icon: Heart,
+      label: t("footer.forCustomers"),
+      href: "/profile/favorites",
+      badge: "3",
+    },
+    {
+      icon: Bell,
+      label: t("profile.settings"),
+      href: "/profile/notifications",
+      badge: null,
+    },
+    {
+      icon: HelpCircle,
+      label: t("footer.helpCenter"),
+      href: "/help",
+      badge: null,
+    },
+    {
+      icon: FileText,
+      label: t("footer.support"),
+      href: "/terms",
+      badge: null,
+    },
+  ];
+
   return (
     <Layout>
       <div className="min-h-screen bg-background">
@@ -74,7 +78,7 @@ const Profile = () => {
                   <p className="text-muted-foreground">john.doe@email.com</p>
                 </div>
                 <Button variant="outline" size="sm">
-                  Edit Profile
+                  {t("action.edit")}
                 </Button>
               </div>
             </CardContent>
@@ -86,30 +90,58 @@ const Profile = () => {
               <CardContent className="p-4 text-center">
                 <Package className="h-6 w-6 text-primary mx-auto mb-2" />
                 <div className="text-2xl font-bold">24</div>
-                <div className="text-xs text-muted-foreground">Orders</div>
+                <div className="text-xs text-muted-foreground">{t("nav.orders")}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
                 <Star className="h-6 w-6 text-warning mx-auto mb-2" />
                 <div className="text-2xl font-bold">12</div>
-                <div className="text-xs text-muted-foreground">Reviews</div>
+                <div className="text-xs text-muted-foreground">{t("laundry.reviews")}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
                 <Heart className="h-6 w-6 text-destructive mx-auto mb-2" />
                 <div className="text-2xl font-bold">3</div>
-                <div className="text-xs text-muted-foreground">Favorites</div>
+                <div className="text-xs text-muted-foreground">{t("stats.laundries")}</div>
               </CardContent>
             </Card>
           </div>
+
+          {/* Language Selector */}
+          <Card className="mb-6">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-4">
+                <div className="h-10 w-10 rounded-xl bg-accent flex items-center justify-center">
+                  <Globe className="h-5 w-5 text-accent-foreground" />
+                </div>
+                <span className="flex-1 font-medium">{t("profile.language")}</span>
+                <div className="flex gap-2">
+                  <Button
+                    variant={language === "en" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setLanguage("en")}
+                  >
+                    English
+                  </Button>
+                  <Button
+                    variant={language === "ar" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setLanguage("ar")}
+                  >
+                    العربية
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Menu Items */}
           <Card>
             <CardContent className="p-2">
               {menuItems.map((item, index) => (
-                <Link key={item.label} to={item.href}>
+                <Link key={item.label + index} to={item.href}>
                   <div
                     className={`flex items-center gap-4 p-4 rounded-xl hover:bg-muted/50 transition-colors ${
                       index < menuItems.length - 1 ? "border-b border-border" : ""
@@ -122,7 +154,7 @@ const Profile = () => {
                     {item.badge && (
                       <Badge variant="soft">{item.badge}</Badge>
                     )}
-                    <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                    <ChevronRight className={`h-5 w-5 text-muted-foreground ${isRTL ? 'rotate-180' : ''}`} />
                   </div>
                 </Link>
               ))}
@@ -136,13 +168,13 @@ const Profile = () => {
               className="w-full mt-6 gap-3 text-destructive hover:text-destructive hover:bg-destructive/10"
             >
               <LogOut className="h-5 w-5" />
-              Sign Out
+              {t("profile.logout")}
             </Button>
           </Link>
 
           {/* App Version */}
           <p className="text-center text-sm text-muted-foreground mt-6">
-            Wash Off v1.0.0
+            {t("app.name")} v1.0.0
           </p>
         </div>
       </div>

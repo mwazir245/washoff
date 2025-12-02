@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { Star, MapPin, Clock, Truck } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface LaundryCardProps {
   id: string;
@@ -30,6 +31,18 @@ const LaundryCard = ({
   hasDelivery,
   isOpen,
 }: LaundryCardProps) => {
+  const { t, isRTL } = useLanguage();
+
+  const getServiceTranslation = (service: string) => {
+    const serviceMap: Record<string, string> = {
+      "Washing": t("service.washing"),
+      "Ironing": t("service.ironing"),
+      "Dry Clean": t("service.dryClean"),
+      "Alterations": t("service.alterations"),
+    };
+    return serviceMap[service] || service;
+  };
+
   return (
     <Link to={`/laundry/${id}`}>
       <Card variant="interactive" className="overflow-hidden group">
@@ -39,16 +52,16 @@ const LaundryCard = ({
             alt={name}
             className="w-full h-40 object-cover transition-transform duration-300 group-hover:scale-105"
           />
-          <div className="absolute top-3 left-3 flex gap-2">
+          <div className={`absolute top-3 ${isRTL ? 'right-3' : 'left-3'} flex gap-2`}>
             {isOpen ? (
-              <Badge variant="success">Open</Badge>
+              <Badge variant="success">{t("laundry.open")}</Badge>
             ) : (
-              <Badge variant="muted">Closed</Badge>
+              <Badge variant="muted">{t("laundry.closed")}</Badge>
             )}
             {hasDelivery && (
               <Badge variant="soft" className="gap-1">
                 <Truck className="h-3 w-3" />
-                Delivery
+                {t("laundry.delivery")}
               </Badge>
             )}
           </div>
@@ -66,7 +79,7 @@ const LaundryCard = ({
           <div className="flex flex-wrap gap-1 mb-3">
             {services.slice(0, 3).map((service) => (
               <Badge key={service} variant="outline" className="text-xs">
-                {service}
+                {getServiceTranslation(service)}
               </Badge>
             ))}
           </div>
