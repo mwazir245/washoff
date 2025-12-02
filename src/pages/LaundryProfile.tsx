@@ -22,57 +22,75 @@ import { useLanguage } from "@/contexts/LanguageContext";
 const mockLaundry = {
   id: "1",
   name: "Fresh & Clean Laundry",
+  nameAr: "مغسلة فريش آند كلين",
   image: "https://images.unsplash.com/photo-1545173168-9f1947eebb7f?w=800&h=400&fit=crop",
   rating: 4.8,
   reviewCount: 124,
   distance: "0.5 km",
   deliveryTime: "2-3 hrs",
   address: "123 Main Street, Downtown",
-  phone: "+1 (555) 123-4567",
+  addressAr: "123 شارع الرئيسي، وسط المدينة",
+  phone: "+966 55 123 4567",
   workingHours: "8:00 AM - 10:00 PM",
   isOpen: true,
   description: "Professional laundry service with 10+ years of experience. We take care of your clothes like they're our own.",
+  descriptionAr: "خدمة غسيل احترافية بخبرة أكثر من 10 سنوات. نعتني بملابسك كأنها ملابسنا.",
 };
 
 const mockServices = [
   {
     id: "1",
     name: "Regular Washing",
+    nameAr: "غسيل عادي",
     description: "Machine wash with premium detergent",
+    descriptionAr: "غسيل آلي بمنظف عالي الجودة",
     price: 3.5,
     unit: "kg",
+    unitAr: "كجم",
     icon: "🧺",
   },
   {
     id: "2",
     name: "Ironing",
+    nameAr: "كي",
     description: "Professional ironing service",
+    descriptionAr: "خدمة كي احترافية",
     price: 2.0,
     unit: "item",
+    unitAr: "قطعة",
     icon: "👔",
   },
   {
     id: "3",
     name: "Dry Cleaning",
+    nameAr: "تنظيف جاف",
     description: "For delicate fabrics and formal wear",
+    descriptionAr: "للأقمشة الرقيقة والملابس الرسمية",
     price: 8.0,
     unit: "item",
+    unitAr: "قطعة",
     icon: "✨",
   },
   {
     id: "4",
     name: "Express Wash",
+    nameAr: "غسيل سريع",
     description: "Get your clothes back in 4 hours",
+    descriptionAr: "احصل على ملابسك خلال 4 ساعات",
     price: 5.0,
     unit: "kg",
+    unitAr: "كجم",
     icon: "⚡",
   },
   {
     id: "5",
     name: "Bedding & Linens",
+    nameAr: "مفروشات وبياضات",
     description: "Sheets, blankets, and duvet covers",
+    descriptionAr: "ملاءات وبطانيات وأغطية لحاف",
     price: 12.0,
     unit: "item",
+    unitAr: "قطعة",
     icon: "🛏️",
   },
 ];
@@ -83,28 +101,34 @@ const mockReviews = [
     user: "Sarah M.",
     rating: 5,
     date: "2 days ago",
+    dateAr: "قبل يومين",
     comment: "Excellent service! My clothes came back perfectly clean and pressed.",
+    commentAr: "خدمة ممتازة! عادت ملابسي نظيفة ومكوية بشكل مثالي.",
   },
   {
     id: "2",
     user: "John D.",
     rating: 4,
     date: "1 week ago",
+    dateAr: "قبل أسبوع",
     comment: "Good quality, reasonable prices. Delivery was on time.",
+    commentAr: "جودة جيدة وأسعار معقولة. التوصيل كان في الموعد.",
   },
   {
     id: "3",
     user: "Emily R.",
     rating: 5,
     date: "2 weeks ago",
+    dateAr: "قبل أسبوعين",
     comment: "Best laundry service in the area. Highly recommend!",
+    commentAr: "أفضل خدمة غسيل في المنطقة. أنصح بها بشدة!",
   },
 ];
 
 const LaundryProfile = () => {
   const { id } = useParams();
   const [cart, setCart] = useState<Record<string, number>>({});
-  const { t } = useLanguage();
+  const { t, language, isRTL } = useLanguage();
 
   const addToCart = (serviceId: string) => {
     setCart((prev) => ({
@@ -137,7 +161,7 @@ const LaundryProfile = () => {
         <div className="relative h-64 md:h-80">
           <img
             src={mockLaundry.image}
-            alt={mockLaundry.name}
+            alt={language === 'ar' ? mockLaundry.nameAr : mockLaundry.name}
             className="w-full h-full object-cover"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-background/80 to-transparent" />
@@ -146,7 +170,7 @@ const LaundryProfile = () => {
           <div className="absolute top-4 left-4 right-4 flex justify-between">
             <Link to="/laundries">
               <Button variant="glass" size="icon" className="rounded-full">
-                <ArrowLeft className="h-5 w-5" />
+                <ArrowLeft className={`h-5 w-5 ${isRTL ? 'rotate-180' : ''}`} />
               </Button>
             </Link>
             <div className="flex gap-2">
@@ -168,15 +192,17 @@ const LaundryProfile = () => {
                 <div>
                   <div className="flex items-center gap-2 mb-2">
                     <h1 className="text-2xl font-bold text-foreground">
-                      {mockLaundry.name}
+                      {language === 'ar' ? mockLaundry.nameAr : mockLaundry.name}
                     </h1>
                     {mockLaundry.isOpen ? (
-                      <Badge variant="success">Open</Badge>
+                      <Badge variant="success">{t("laundry.open")}</Badge>
                     ) : (
-                      <Badge variant="muted">Closed</Badge>
+                      <Badge variant="muted">{t("laundry.closed")}</Badge>
                     )}
                   </div>
-                  <p className="text-muted-foreground">{mockLaundry.description}</p>
+                  <p className="text-muted-foreground">
+                    {language === 'ar' ? mockLaundry.descriptionAr : mockLaundry.description}
+                  </p>
                 </div>
               </div>
 
@@ -186,7 +212,7 @@ const LaundryProfile = () => {
                   <Star className="h-5 w-5 fill-warning text-warning" />
                   <span className="font-semibold">{mockLaundry.rating}</span>
                   <span className="text-muted-foreground">
-                    ({mockLaundry.reviewCount} reviews)
+                    ({mockLaundry.reviewCount} {t("laundry.reviews")})
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-muted-foreground">
@@ -203,7 +229,7 @@ const LaundryProfile = () => {
               <div className="grid md:grid-cols-3 gap-4 text-sm">
                 <div className="flex items-center gap-2">
                   <MapPin className="h-4 w-4 text-primary" />
-                  <span>{mockLaundry.address}</span>
+                  <span>{language === 'ar' ? mockLaundry.addressAr : mockLaundry.address}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4 text-primary" />
@@ -211,7 +237,7 @@ const LaundryProfile = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   <Phone className="h-4 w-4 text-primary" />
-                  <span>{mockLaundry.phone}</span>
+                  <span dir="ltr">{mockLaundry.phone}</span>
                 </div>
               </div>
             </CardContent>
@@ -221,10 +247,10 @@ const LaundryProfile = () => {
           <Tabs defaultValue="services" className="mt-6">
             <TabsList className="w-full justify-start bg-card border border-border">
               <TabsTrigger value="services" className="flex-1 md:flex-none">
-                Services
+                {t("laundryProfile.services")}
               </TabsTrigger>
               <TabsTrigger value="reviews" className="flex-1 md:flex-none">
-                Reviews
+                {t("laundryProfile.reviews")}
               </TabsTrigger>
             </TabsList>
 
@@ -233,7 +259,12 @@ const LaundryProfile = () => {
                 {mockServices.map((service) => (
                   <ServiceCard
                     key={service.id}
-                    {...service}
+                    id={service.id}
+                    name={language === 'ar' ? service.nameAr : service.name}
+                    description={language === 'ar' ? service.descriptionAr : service.description}
+                    price={service.price}
+                    unit={language === 'ar' ? service.unitAr : service.unit}
+                    icon={service.icon}
                     quantity={cart[service.id] || 0}
                     onAdd={() => addToCart(service.id)}
                     onRemove={() => removeFromCart(service.id)}
@@ -255,7 +286,7 @@ const LaundryProfile = () => {
                           <div>
                             <p className="font-medium">{review.user}</p>
                             <p className="text-xs text-muted-foreground">
-                              {review.date}
+                              {language === 'ar' ? review.dateAr : review.date}
                             </p>
                           </div>
                         </div>
@@ -268,7 +299,9 @@ const LaundryProfile = () => {
                           ))}
                         </div>
                       </div>
-                      <p className="text-muted-foreground">{review.comment}</p>
+                      <p className="text-muted-foreground">
+                        {language === 'ar' ? review.commentAr : review.comment}
+                      </p>
                     </CardContent>
                   </Card>
                 ))}
@@ -284,10 +317,10 @@ const LaundryProfile = () => {
               <Link to={`/order/${id}`}>
                 <Button size="lg" className="w-full justify-between">
                   <span>
-                    {totalItems} item{totalItems > 1 ? "s" : ""} · {totalPrice.toFixed(2)} {t("currency.symbol")}
+                    {totalItems} {totalItems > 1 ? t("laundryProfile.items") : t("laundryProfile.item")} · {totalPrice.toFixed(2)} {t("currency.symbol")}
                   </span>
                   <span className="flex items-center gap-2">
-                    Continue <ChevronRight className="h-4 w-4" />
+                    {t("action.continue")} <ChevronRight className={`h-4 w-4 ${isRTL ? 'rotate-180' : ''}`} />
                   </span>
                 </Button>
               </Link>

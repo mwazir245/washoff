@@ -13,40 +13,48 @@ const mockOrders = [
     laundry: "Fresh & Clean Laundry",
     image: "https://images.unsplash.com/photo-1545173168-9f1947eebb7f?w=100&h=100&fit=crop",
     items: "3 kg wash, 5 items iron",
+    itemsAr: "3 كجم غسيل، 5 قطع كي",
     total: 22.5,
     status: "in_progress",
     statusKey: "status.inWashing",
     date: "Today",
+    dateAr: "اليوم",
   },
   {
     id: "ORD122",
     laundry: "Sparkle Wash",
     image: "https://images.unsplash.com/photo-1517677208171-0bc6725a3e60?w=100&h=100&fit=crop",
     items: "2 items dry clean",
+    itemsAr: "2 قطع تنظيف جاف",
     total: 16.0,
     status: "out_for_delivery",
     statusKey: "status.outForDelivery",
     date: "Today",
+    dateAr: "اليوم",
   },
   {
     id: "ORD121",
     laundry: "Premium Garment Care",
     image: "https://images.unsplash.com/photo-1582735689369-4fe89db7114c?w=100&h=100&fit=crop",
     items: "5 kg wash",
+    itemsAr: "5 كجم غسيل",
     total: 17.5,
     status: "delivered",
     statusKey: "status.delivered",
     date: "Yesterday",
+    dateAr: "أمس",
   },
   {
     id: "ORD120",
     laundry: "Fresh & Clean Laundry",
     image: "https://images.unsplash.com/photo-1545173168-9f1947eebb7f?w=100&h=100&fit=crop",
     items: "4 items iron, 2 dry clean",
+    itemsAr: "4 قطع كي، 2 تنظيف جاف",
     total: 28.0,
     status: "delivered",
     statusKey: "status.delivered",
     date: "2 days ago",
+    dateAr: "قبل يومين",
   },
 ];
 
@@ -59,7 +67,7 @@ const statusColors: Record<string, "default" | "warning" | "success" | "muted"> 
 };
 
 const Orders = () => {
-  const { t, isRTL } = useLanguage();
+  const { t, language, isRTL } = useLanguage();
   const activeOrders = mockOrders.filter((o) => o.status !== "delivered");
   const completedOrders = mockOrders.filter((o) => o.status === "delivered");
 
@@ -114,14 +122,14 @@ const Orders = () => {
                               </Badge>
                             </div>
                             <p className="text-sm text-muted-foreground mb-1">
-                              {order.items}
+                              {language === 'ar' ? order.itemsAr : order.items}
                             </p>
                             <div className="flex items-center justify-between">
                               <span className="text-sm text-muted-foreground">
-                                {order.id} • {order.date}
+                                {order.id} • {language === 'ar' ? order.dateAr : order.date}
                               </span>
                               <span className="font-semibold text-primary">
-                                ${order.total.toFixed(2)}
+                                {order.total.toFixed(2)} {t("currency.symbol")}
                               </span>
                             </div>
                           </div>
@@ -155,14 +163,14 @@ const Orders = () => {
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground mb-1">
-                          {order.items}
+                          {language === 'ar' ? order.itemsAr : order.items}
                         </p>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-muted-foreground">
-                            {order.id} • {order.date}
+                            {order.id} • {language === 'ar' ? order.dateAr : order.date}
                           </span>
                           <span className="font-semibold">
-                            ${order.total.toFixed(2)}
+                            {order.total.toFixed(2)} {t("currency.symbol")}
                           </span>
                         </div>
                       </div>
