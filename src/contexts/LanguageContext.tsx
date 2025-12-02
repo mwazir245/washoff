@@ -199,7 +199,7 @@ export const translations = {
     "nav.getStarted": "ابدأ الآن",
     
     // Hero Section
-    "hero.title": "الغسيل أصبح",
+    "hero.title": "الغسيل صار",
     "hero.titleHighlight": "سهلاً",
     "hero.subtitle": "تواصل مع خدمات الغسيل الموثوقة بالقرب منك. ملابس نظيفة ومنعشة توصل إلى بابك.",
     "hero.searchPlaceholder": "أدخل موقعك",
