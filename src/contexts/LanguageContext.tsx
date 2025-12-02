@@ -228,7 +228,7 @@ export const translations = {
     
     // Hero Section
     "hero.title": "الغسيل صار",
-    "hero.titleHighlight": "سهلاً",
+    "hero.titleHighlight": "سهل",
     "hero.subtitle": "تواصل مع خدمات الغسيل الموثوقة بالقرب منك. ملابس نظيفة ومنعشة توصل إلى بابك.",
     "hero.searchPlaceholder": "أدخل موقعك",
     "hero.searchButton": "ابحث عن مغاسل",
