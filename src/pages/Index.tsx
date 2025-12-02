@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { MapPin, Search, Sparkles, Clock, Shield, Truck, ChevronRight, Star } from "lucide-react";
+import { MapPin, Search, Sparkles, Clock, Heart, Truck, ChevronRight, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -68,9 +68,9 @@ const Index = () => {
       description: t("features.freeDeliveryDesc"),
     },
     {
-      icon: Shield,
-      title: t("features.qualityGuaranteed"),
-      description: t("features.qualityGuaranteedDesc"),
+      icon: Heart,
+      title: t("features.socialImpact"),
+      description: t("features.socialImpactDesc"),
     },
     {
       icon: Sparkles,
