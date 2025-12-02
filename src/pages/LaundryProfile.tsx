@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Layout from "@/components/layout/Layout";
 import ServiceCard from "@/components/laundry/ServiceCard";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const mockLaundry = {
   id: "1",
@@ -103,6 +104,7 @@ const mockReviews = [
 const LaundryProfile = () => {
   const { id } = useParams();
   const [cart, setCart] = useState<Record<string, number>>({});
+  const { t } = useLanguage();
 
   const addToCart = (serviceId: string) => {
     setCart((prev) => ({
@@ -282,7 +284,7 @@ const LaundryProfile = () => {
               <Link to={`/order/${id}`}>
                 <Button size="lg" className="w-full justify-between">
                   <span>
-                    {totalItems} item{totalItems > 1 ? "s" : ""} · ${totalPrice.toFixed(2)}
+                    {totalItems} item{totalItems > 1 ? "s" : ""} · {totalPrice.toFixed(2)} {t("currency.symbol")}
                   </span>
                   <span className="flex items-center gap-2">
                     Continue <ChevronRight className="h-4 w-4" />
