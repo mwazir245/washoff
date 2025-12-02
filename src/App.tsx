@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { LanguageProvider } from "@/contexts/LanguageContext";
 import Index from "./pages/Index";
 import Laundries from "./pages/Laundries";
 import LaundryProfile from "./pages/LaundryProfile";
@@ -24,39 +25,41 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          {/* Customer Routes */}
-          <Route path="/" element={<Index />} />
-          <Route path="/laundries" element={<Laundries />} />
-          <Route path="/laundry/:id" element={<LaundryProfile />} />
-          <Route path="/order/:id" element={<Order />} />
-          <Route path="/tracking/:orderId" element={<OrderTracking />} />
-          <Route path="/orders" element={<Orders />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/rating/:orderId" element={<Rating />} />
-          <Route path="/how-it-works" element={<HowItWorks />} />
-          <Route path="/auth" element={<Auth />} />
-          
-          {/* Provider Routes */}
-          <Route path="/provider/register" element={<ProviderRegister />} />
-          <Route path="/provider/dashboard" element={<ProviderDashboard />} />
-          
-          {/* Delivery Routes */}
-          <Route path="/delivery/register" element={<DeliveryRegister />} />
-          <Route path="/delivery/dashboard" element={<DeliveryDashboard />} />
-          
-          {/* Admin Routes */}
-          <Route path="/admin" element={<AdminDashboard />} />
-          
-          {/* Catch-all */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+    <LanguageProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            {/* Customer Routes */}
+            <Route path="/" element={<Index />} />
+            <Route path="/laundries" element={<Laundries />} />
+            <Route path="/laundry/:id" element={<LaundryProfile />} />
+            <Route path="/order/:id" element={<Order />} />
+            <Route path="/tracking/:orderId" element={<OrderTracking />} />
+            <Route path="/orders" element={<Orders />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/rating/:orderId" element={<Rating />} />
+            <Route path="/how-it-works" element={<HowItWorks />} />
+            <Route path="/auth" element={<Auth />} />
+            
+            {/* Provider Routes */}
+            <Route path="/provider/register" element={<ProviderRegister />} />
+            <Route path="/provider/dashboard" element={<ProviderDashboard />} />
+            
+            {/* Delivery Routes */}
+            <Route path="/delivery/register" element={<DeliveryRegister />} />
+            <Route path="/delivery/dashboard" element={<DeliveryDashboard />} />
+            
+            {/* Admin Routes */}
+            <Route path="/admin" element={<AdminDashboard />} />
+            
+            {/* Catch-all */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </LanguageProvider>
   </QueryClientProvider>
 );
 
