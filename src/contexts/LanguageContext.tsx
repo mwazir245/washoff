@@ -49,8 +49,8 @@ export const translations = {
     "features.quickTurnaroundDesc": "Get your clothes back clean and fresh within hours",
     "features.freeDelivery": "Discounted Delivery",
     "features.freeDeliveryDesc": "We come to you - no need to leave your home",
-    "features.qualityGuaranteed": "Quality Guaranteed",
-    "features.qualityGuaranteedDesc": "Professional care for all your garments",
+    "features.socialImpact": "Social Impact",
+    "features.socialImpactDesc": "Donate clothes - we clean, iron & deliver to those in need",
     "features.ecoFriendly": "Eco-Friendly",
     "features.ecoFriendlyDesc": "Sustainable cleaning practices and products",
     
@@ -217,8 +217,8 @@ export const translations = {
     "features.quickTurnaroundDesc": "احصل على ملابسك نظيفة ومنعشة خلال ساعات",
     "features.freeDelivery": "توصيل مُخفّض",
     "features.freeDeliveryDesc": "نأتي إليك - لا حاجة لمغادرة منزلك",
-    "features.qualityGuaranteed": "جودة مضمونة",
-    "features.qualityGuaranteedDesc": "عناية احترافية لجميع ملابسك",
+    "features.socialImpact": "الأثر المجتمعي",
+    "features.socialImpactDesc": "تبرع بملابسك - ننظفها ونكويها ونوصلها للمحتاجين",
     "features.ecoFriendly": "صديق للبيئة",
     "features.ecoFriendlyDesc": "ممارسات ومنتجات تنظيف مستدامة",
     
