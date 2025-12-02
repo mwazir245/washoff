@@ -14,16 +14,382 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      donations: {
+        Row: {
+          address: string
+          clothes_description: string
+          created_at: string | null
+          donor_name: string
+          id: string
+          phone: string
+          preferred_date: string
+          status: string | null
+        }
+        Insert: {
+          address: string
+          clothes_description: string
+          created_at?: string | null
+          donor_name: string
+          id?: string
+          phone: string
+          preferred_date: string
+          status?: string | null
+        }
+        Update: {
+          address?: string
+          clothes_description?: string
+          created_at?: string | null
+          donor_name?: string
+          id?: string
+          phone?: string
+          preferred_date?: string
+          status?: string | null
+        }
+        Relationships: []
+      }
+      laundries: {
+        Row: {
+          address: string
+          city: string
+          created_at: string | null
+          description: string | null
+          description_ar: string | null
+          has_delivery: boolean | null
+          id: string
+          image_url: string | null
+          is_open: boolean | null
+          latitude: number | null
+          longitude: number | null
+          name: string
+          name_ar: string | null
+          owner_id: string
+          phone: string | null
+          rating: number | null
+          reviews_count: number | null
+          updated_at: string | null
+          working_hours_end: string | null
+          working_hours_start: string | null
+        }
+        Insert: {
+          address: string
+          city: string
+          created_at?: string | null
+          description?: string | null
+          description_ar?: string | null
+          has_delivery?: boolean | null
+          id?: string
+          image_url?: string | null
+          is_open?: boolean | null
+          latitude?: number | null
+          longitude?: number | null
+          name: string
+          name_ar?: string | null
+          owner_id: string
+          phone?: string | null
+          rating?: number | null
+          reviews_count?: number | null
+          updated_at?: string | null
+          working_hours_end?: string | null
+          working_hours_start?: string | null
+        }
+        Update: {
+          address?: string
+          city?: string
+          created_at?: string | null
+          description?: string | null
+          description_ar?: string | null
+          has_delivery?: boolean | null
+          id?: string
+          image_url?: string | null
+          is_open?: boolean | null
+          latitude?: number | null
+          longitude?: number | null
+          name?: string
+          name_ar?: string | null
+          owner_id?: string
+          phone?: string | null
+          rating?: number | null
+          reviews_count?: number | null
+          updated_at?: string | null
+          working_hours_end?: string | null
+          working_hours_start?: string | null
+        }
+        Relationships: []
+      }
+      order_items: {
+        Row: {
+          created_at: string | null
+          id: string
+          order_id: string
+          quantity: number
+          service_id: string | null
+          service_name: string
+          total_price: number
+          unit_price: number
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          order_id: string
+          quantity?: number
+          service_id?: string | null
+          service_name: string
+          total_price: number
+          unit_price: number
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          order_id?: string
+          quantity?: number
+          service_id?: string | null
+          service_name?: string
+          total_price?: number
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          created_at: string | null
+          customer_id: string
+          delivery_address: string
+          delivery_date: string | null
+          delivery_partner_id: string | null
+          id: string
+          laundry_id: string | null
+          notes: string | null
+          pickup_address: string
+          pickup_date: string | null
+          status: Database["public"]["Enums"]["order_status"] | null
+          total_amount: number
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          customer_id: string
+          delivery_address: string
+          delivery_date?: string | null
+          delivery_partner_id?: string | null
+          id?: string
+          laundry_id?: string | null
+          notes?: string | null
+          pickup_address: string
+          pickup_date?: string | null
+          status?: Database["public"]["Enums"]["order_status"] | null
+          total_amount?: number
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          customer_id?: string
+          delivery_address?: string
+          delivery_date?: string | null
+          delivery_partner_id?: string | null
+          id?: string
+          laundry_id?: string | null
+          notes?: string | null
+          pickup_address?: string
+          pickup_date?: string | null
+          status?: Database["public"]["Enums"]["order_status"] | null
+          total_amount?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_laundry_id_fkey"
+            columns: ["laundry_id"]
+            isOneToOne: false
+            referencedRelation: "laundries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          address: string | null
+          avatar_url: string | null
+          city: string | null
+          created_at: string | null
+          full_name: string | null
+          id: string
+          phone: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          address?: string | null
+          avatar_url?: string | null
+          city?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id: string
+          phone?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          address?: string | null
+          avatar_url?: string | null
+          city?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id?: string
+          phone?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      reviews: {
+        Row: {
+          comment: string | null
+          created_at: string | null
+          customer_id: string
+          id: string
+          laundry_id: string
+          order_id: string
+          rating: number
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string | null
+          customer_id: string
+          id?: string
+          laundry_id: string
+          order_id: string
+          rating: number
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string | null
+          customer_id?: string
+          id?: string
+          laundry_id?: string
+          order_id?: string
+          rating?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reviews_laundry_id_fkey"
+            columns: ["laundry_id"]
+            isOneToOne: false
+            referencedRelation: "laundries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reviews_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      services: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          duration_hours: number | null
+          icon: string | null
+          id: string
+          laundry_id: string
+          name: string
+          name_ar: string | null
+          price: number
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          duration_hours?: number | null
+          icon?: string | null
+          id?: string
+          laundry_id: string
+          name: string
+          name_ar?: string | null
+          price: number
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          duration_hours?: number | null
+          icon?: string | null
+          id?: string
+          laundry_id?: string
+          name?: string
+          name_ar?: string | null
+          price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "services_laundry_id_fkey"
+            columns: ["laundry_id"]
+            isOneToOne: false
+            referencedRelation: "laundries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string | null
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "customer" | "provider" | "delivery"
+      order_status:
+        | "pending"
+        | "confirmed"
+        | "pickup_on_way"
+        | "clothes_collected"
+        | "washing"
+        | "ironing"
+        | "dry_cleaning"
+        | "ready"
+        | "out_for_delivery"
+        | "delivered"
+        | "cancelled"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +516,21 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "customer", "provider", "delivery"],
+      order_status: [
+        "pending",
+        "confirmed",
+        "pickup_on_way",
+        "clothes_collected",
+        "washing",
+        "ironing",
+        "dry_cleaning",
+        "ready",
+        "out_for_delivery",
+        "delivered",
+        "cancelled",
+      ],
+    },
   },
 } as const
