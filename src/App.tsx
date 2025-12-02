@@ -13,6 +13,7 @@ import Orders from "./pages/Orders";
 import Profile from "./pages/Profile";
 import Rating from "./pages/Rating";
 import HowItWorks from "./pages/HowItWorks";
+import Donation from "./pages/Donation";
 import Auth from "./pages/Auth";
 import ProviderRegister from "./pages/provider/ProviderRegister";
 import ProviderDashboard from "./pages/provider/ProviderDashboard";
@@ -41,6 +42,7 @@ const App = () => (
             <Route path="/profile" element={<Profile />} />
             <Route path="/rating/:orderId" element={<Rating />} />
             <Route path="/how-it-works" element={<HowItWorks />} />
+            <Route path="/donation" element={<Donation />} />
             <Route path="/auth" element={<Auth />} />
             
             {/* Provider Routes */}
