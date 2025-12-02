@@ -1,18 +1,21 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Menu, X, User, MapPin } from "lucide-react";
+import { Menu, X, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import LanguageToggle from "@/components/LanguageToggle";
+import { useLanguage } from "@/contexts/LanguageContext";
 import logo from "@/assets/logo.png";
 
 const Header = () => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+  const { t, isRTL } = useLanguage();
 
   const navItems = [
-    { label: "Home", href: "/" },
-    { label: "Find Laundries", href: "/laundries" },
-    { label: "How It Works", href: "/how-it-works" },
-    { label: "For Providers", href: "/provider/register" },
+    { label: t("nav.home"), href: "/" },
+    { label: t("nav.findLaundries"), href: "/laundries" },
+    { label: t("nav.howItWorks"), href: "/how-it-works" },
+    { label: t("nav.forProviders"), href: "/provider/register" },
   ];
 
   return (
@@ -22,7 +25,7 @@ const Header = () => {
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
             <img src={logo} alt="Wash Off" className="h-10 w-auto" />
-            <span className="text-xl font-bold text-secondary">Wash Off</span>
+            <span className="text-xl font-bold text-secondary">{t("app.name")}</span>
           </Link>
 
           {/* Desktop Navigation */}
@@ -44,27 +47,31 @@ const Header = () => {
 
           {/* Desktop Actions */}
           <div className="hidden md:flex items-center gap-3">
+            <LanguageToggle />
             <Button variant="ghost" size="sm" className="gap-2">
-              <MapPin className="h-4 w-4" />
-              <span className="text-sm">Set Location</span>
+              <MapPin className={`h-4 w-4 ${isRTL ? "ml-2" : "mr-0"}`} />
+              <span className="text-sm">{t("nav.setLocation")}</span>
             </Button>
             <Link to="/auth">
               <Button variant="outline" size="sm">
-                Sign In
+                {t("nav.signIn")}
               </Button>
             </Link>
             <Link to="/auth?mode=signup">
-              <Button size="sm">Get Started</Button>
+              <Button size="sm">{t("nav.getStarted")}</Button>
             </Link>
           </div>
 
           {/* Mobile Menu Button */}
-          <button
-            className="md:hidden p-2 rounded-lg hover:bg-muted"
-            onClick={() => setIsOpen(!isOpen)}
-          >
-            {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </button>
+          <div className="md:hidden flex items-center gap-2">
+            <LanguageToggle />
+            <button
+              className="p-2 rounded-lg hover:bg-muted"
+              onClick={() => setIsOpen(!isOpen)}
+            >
+              {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            </button>
+          </div>
         </div>
 
         {/* Mobile Navigation */}
@@ -88,11 +95,11 @@ const Header = () => {
               <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-border">
                 <Link to="/auth" onClick={() => setIsOpen(false)}>
                   <Button variant="outline" className="w-full">
-                    Sign In
+                    {t("nav.signIn")}
                   </Button>
                 </Link>
                 <Link to="/auth?mode=signup" onClick={() => setIsOpen(false)}>
-                  <Button className="w-full">Get Started</Button>
+                  <Button className="w-full">{t("nav.getStarted")}</Button>
                 </Link>
               </div>
             </nav>
