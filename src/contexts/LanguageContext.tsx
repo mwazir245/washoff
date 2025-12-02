@@ -163,6 +163,10 @@ export const translations = {
     "admin.orders": "Orders",
     "admin.reports": "Reports",
     
+    // Currency
+    "currency.sar": "SAR",
+    "currency.symbol": "SAR",
+    
     // Common Actions
     "action.submit": "Submit",
     "action.cancel": "Cancel",
@@ -326,6 +330,10 @@ export const translations = {
     "admin.deliveryPartners": "شركاء التوصيل",
     "admin.orders": "الطلبات",
     "admin.reports": "التقارير",
+    
+    // Currency
+    "currency.sar": "ر.س",
+    "currency.symbol": "ر.س",
     
     // Common Actions
     "action.submit": "إرسال",

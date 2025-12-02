@@ -1,6 +1,7 @@
 import { Plus, Minus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface ServiceCardProps {
   id: string;
@@ -24,6 +25,8 @@ const ServiceCard = ({
   onAdd,
   onRemove,
 }: ServiceCardProps) => {
+  const { t, isRTL } = useLanguage();
+  
   return (
     <Card variant="default" className="overflow-hidden">
       <CardContent className="p-4">
@@ -36,7 +39,7 @@ const ServiceCard = ({
             </p>
             <div className="flex items-center justify-between mt-3">
               <div className="text-primary font-semibold">
-                ${price.toFixed(2)} <span className="text-sm text-muted-foreground font-normal">/ {unit}</span>
+                {price.toFixed(2)} {t("currency.symbol")} <span className="text-sm text-muted-foreground font-normal">/ {unit}</span>
               </div>
               
               {quantity === 0 ? (
