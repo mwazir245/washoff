@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft,
+  ArrowRight,
   User,
   Phone,
   Mail,
@@ -15,8 +16,10 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import logo from "@/assets/logo.png";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const DeliveryRegister = () => {
+  const { t, isRTL } = useLanguage();
   const [partnerType, setPartnerType] = useState("individual");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -28,6 +31,14 @@ const DeliveryRegister = () => {
     }, 2000);
   };
 
+  const BackArrow = isRTL ? ArrowRight : ArrowLeft;
+
+  const benefits = [
+    { icon: "💰", label: t("deliveryRegister.earnMore") },
+    { icon: "⏰", label: t("deliveryRegister.flexibleHours") },
+    { icon: "📍", label: t("deliveryRegister.workLocally") },
+  ];
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -35,13 +46,13 @@ const DeliveryRegister = () => {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <Link to="/" className="flex items-center gap-2">
-              <img src={logo} alt="Wash Off" className="h-8 w-auto" />
-              <span className="text-lg font-bold text-secondary">Wash Off</span>
+              <img src={logo} alt={t("app.name")} className="h-8 w-auto" />
+              <span className="text-lg font-bold text-secondary">{t("app.name")}</span>
             </Link>
             <Link to="/">
               <Button variant="ghost" size="sm">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Home
+                <BackArrow className={`h-4 w-4 ${isRTL ? "ml-2" : "mr-2"}`} />
+                {t("deliveryRegister.backToHome")}
               </Button>
             </Link>
           </div>
@@ -57,25 +68,25 @@ const DeliveryRegister = () => {
               <Truck className="h-10 w-10 text-primary" />
             </div>
             <h1 className="text-2xl font-bold text-foreground mb-2">
-              Become a Delivery Partner
+              {t("deliveryRegister.title")}
             </h1>
             <p className="text-muted-foreground">
-              Join our network and earn money delivering fresh laundry
+              {t("deliveryRegister.subtitle")}
             </p>
           </div>
 
           <Card className="shadow-xl">
             <CardHeader>
-              <CardTitle>Partner Registration</CardTitle>
+              <CardTitle>{t("deliveryRegister.cardTitle")}</CardTitle>
               <CardDescription>
-                Fill in your details to get started
+                {t("deliveryRegister.cardDesc")}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-6">
                 {/* Partner Type */}
                 <div className="space-y-3">
-                  <Label>Partner Type</Label>
+                  <Label>{t("deliveryRegister.partnerType")}</Label>
                   <RadioGroup
                     value={partnerType}
                     onValueChange={setPartnerType}
@@ -92,10 +103,10 @@ const DeliveryRegister = () => {
                       <RadioGroupItem value="individual" id="individual" />
                       <div>
                         <Label htmlFor="individual" className="cursor-pointer font-medium">
-                          Individual
+                          {t("deliveryRegister.individual")}
                         </Label>
                         <p className="text-xs text-muted-foreground">
-                          Personal driver
+                          {t("deliveryRegister.individualDesc")}
                         </p>
                       </div>
                     </div>
@@ -110,10 +121,10 @@ const DeliveryRegister = () => {
                       <RadioGroupItem value="company" id="company" />
                       <div>
                         <Label htmlFor="company" className="cursor-pointer font-medium">
-                          Company
+                          {t("deliveryRegister.company")}
                         </Label>
                         <p className="text-xs text-muted-foreground">
-                          Delivery company
+                          {t("deliveryRegister.companyDesc")}
                         </p>
                       </div>
                     </div>
@@ -123,54 +134,54 @@ const DeliveryRegister = () => {
                 {/* Personal Info */}
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="name">Full Name</Label>
+                    <Label htmlFor="name">{t("deliveryRegister.fullName")}</Label>
                     <div className="relative">
-                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                      <User className={`absolute ${isRTL ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground`} />
                       <Input
                         id="name"
-                        placeholder="Enter your full name"
-                        className="pl-10"
+                        placeholder={t("deliveryRegister.fullNamePlaceholder")}
+                        className={isRTL ? "pr-10" : "pl-10"}
                         required
                       />
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="email">{t("deliveryRegister.email")}</Label>
                     <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                      <Mail className={`absolute ${isRTL ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground`} />
                       <Input
                         id="email"
                         type="email"
-                        placeholder="Enter your email"
-                        className="pl-10"
+                        placeholder={t("deliveryRegister.emailPlaceholder")}
+                        className={isRTL ? "pr-10" : "pl-10"}
                         required
                       />
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="phone">Phone Number</Label>
+                    <Label htmlFor="phone">{t("deliveryRegister.phone")}</Label>
                     <div className="relative">
-                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                      <Phone className={`absolute ${isRTL ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground`} />
                       <Input
                         id="phone"
                         type="tel"
-                        placeholder="Enter your phone number"
-                        className="pl-10"
+                        placeholder={t("deliveryRegister.phonePlaceholder")}
+                        className={isRTL ? "pr-10" : "pl-10"}
                         required
                       />
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="city">City</Label>
+                    <Label htmlFor="city">{t("deliveryRegister.city")}</Label>
                     <div className="relative">
-                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                      <MapPin className={`absolute ${isRTL ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground`} />
                       <Input
                         id="city"
-                        placeholder="Enter your city"
-                        className="pl-10"
+                        placeholder={t("deliveryRegister.cityPlaceholder")}
+                        className={isRTL ? "pr-10" : "pl-10"}
                         required
                       />
                     </div>
@@ -178,13 +189,13 @@ const DeliveryRegister = () => {
 
                   {partnerType === "company" && (
                     <div className="space-y-2">
-                      <Label htmlFor="company">Company Name</Label>
+                      <Label htmlFor="company">{t("deliveryRegister.companyName")}</Label>
                       <div className="relative">
-                        <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                        <Building2 className={`absolute ${isRTL ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground`} />
                         <Input
                           id="company"
-                          placeholder="Enter company name"
-                          className="pl-10"
+                          placeholder={t("deliveryRegister.companyNamePlaceholder")}
+                          className={isRTL ? "pr-10" : "pl-10"}
                           required
                         />
                       </div>
@@ -193,7 +204,7 @@ const DeliveryRegister = () => {
                 </div>
 
                 <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? "Submitting..." : "Submit Application"}
+                  {isLoading ? t("deliveryRegister.submitting") : t("deliveryRegister.submitApplication")}
                 </Button>
               </form>
             </CardContent>
@@ -201,11 +212,7 @@ const DeliveryRegister = () => {
 
           {/* Benefits */}
           <div className="mt-8 grid grid-cols-3 gap-4 text-center">
-            {[
-              { icon: "💰", label: "Earn More" },
-              { icon: "⏰", label: "Flexible Hours" },
-              { icon: "📍", label: "Work Locally" },
-            ].map((benefit) => (
+            {benefits.map((benefit) => (
               <div
                 key={benefit.label}
                 className="p-4 rounded-xl bg-card border border-border"

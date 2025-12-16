@@ -78,7 +78,7 @@ const HowItWorks = () => {
               {t("howItWorksPage.badge")}
             </Badge>
             <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-4">
-              {t("howItWorksPage.title")} <span className="text-gradient">{t("howItWorksPage.titleHighlight")}</span> {t("howItWorksPage.titleEnd")}
+              {t("howItWorksPage.title")}
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               {t("howItWorksPage.subtitle")}
