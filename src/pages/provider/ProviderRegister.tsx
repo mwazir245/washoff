@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft,
+  ArrowRight,
   Building2,
   MapPin,
   Clock,
@@ -18,17 +19,27 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import logo from "@/assets/logo.png";
-
-const defaultServices = [
-  { name: "Regular Washing", price: "" },
-  { name: "Ironing", price: "" },
-  { name: "Dry Cleaning", price: "" },
-];
+import { useLanguage } from "@/contexts/LanguageContext";
 
 const ProviderRegister = () => {
+  const { t, isRTL } = useLanguage();
   const [step, setStep] = useState(1);
-  const [services, setServices] = useState(defaultServices);
+  const [services, setServices] = useState([
+    { name: t("providerRegister.regularWashing"), price: "" },
+    { name: t("providerRegister.ironing"), price: "" },
+    { name: t("providerRegister.dryCleaning"), price: "" },
+  ]);
   const [isLoading, setIsLoading] = useState(false);
+
+  const days = [
+    { key: "mon", label: t("providerRegister.days.mon") },
+    { key: "tue", label: t("providerRegister.days.tue") },
+    { key: "wed", label: t("providerRegister.days.wed") },
+    { key: "thu", label: t("providerRegister.days.thu") },
+    { key: "fri", label: t("providerRegister.days.fri") },
+    { key: "sat", label: t("providerRegister.days.sat") },
+    { key: "sun", label: t("providerRegister.days.sun") },
+  ];
 
   const addService = () => {
     setServices([...services, { name: "", price: "" }]);
@@ -51,6 +62,8 @@ const ProviderRegister = () => {
     }
   };
 
+  const BackArrow = isRTL ? ArrowRight : ArrowLeft;
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -58,13 +71,13 @@ const ProviderRegister = () => {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <Link to="/" className="flex items-center gap-2">
-              <img src={logo} alt="Wash Off" className="h-8 w-auto" />
-              <span className="text-lg font-bold text-secondary">Wash Off</span>
+              <img src={logo} alt={t("app.name")} className="h-8 w-auto" />
+              <span className="text-lg font-bold text-secondary">{t("app.name")}</span>
             </Link>
             <Link to="/">
               <Button variant="ghost" size="sm">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Home
+                <BackArrow className={`h-4 w-4 ${isRTL ? "ml-2" : "mr-2"}`} />
+                {t("providerRegister.backToHome")}
               </Button>
             </Link>
           </div>
@@ -106,68 +119,68 @@ const ProviderRegister = () => {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Building2 className="h-5 w-5 text-primary" />
-                      Business Information
+                      {t("providerRegister.businessInfo")}
                     </CardTitle>
                     <CardDescription>
-                      Tell us about your laundry business
+                      {t("providerRegister.businessInfoDesc")}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="businessName">Business Name</Label>
+                      <Label htmlFor="businessName">{t("providerRegister.businessName")}</Label>
                       <Input
                         id="businessName"
-                        placeholder="Enter your business name"
+                        placeholder={t("providerRegister.businessNamePlaceholder")}
                         required
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="registration">Commercial Registration Number</Label>
+                      <Label htmlFor="registration">{t("providerRegister.commercialReg")}</Label>
                       <div className="relative">
-                        <FileText className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                        <FileText className={`absolute ${isRTL ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground`} />
                         <Input
                           id="registration"
-                          placeholder="Enter registration number"
-                          className="pl-10"
+                          placeholder={t("providerRegister.commercialRegPlaceholder")}
+                          className={isRTL ? "pr-10" : "pl-10"}
                           required
                         />
                       </div>
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="email">Business Email</Label>
+                      <Label htmlFor="email">{t("providerRegister.businessEmail")}</Label>
                       <div className="relative">
-                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                        <Mail className={`absolute ${isRTL ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground`} />
                         <Input
                           id="email"
                           type="email"
-                          placeholder="Enter business email"
-                          className="pl-10"
+                          placeholder={t("providerRegister.businessEmailPlaceholder")}
+                          className={isRTL ? "pr-10" : "pl-10"}
                           required
                         />
                       </div>
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="phone">Contact Phone</Label>
+                      <Label htmlFor="phone">{t("providerRegister.contactPhone")}</Label>
                       <div className="relative">
-                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                        <Phone className={`absolute ${isRTL ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground`} />
                         <Input
                           id="phone"
                           type="tel"
-                          placeholder="Enter contact number"
-                          className="pl-10"
+                          placeholder={t("providerRegister.contactPhonePlaceholder")}
+                          className={isRTL ? "pr-10" : "pl-10"}
                           required
                         />
                       </div>
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="description">Business Description</Label>
+                      <Label htmlFor="description">{t("providerRegister.businessDescription")}</Label>
                       <Textarea
                         id="description"
-                        placeholder="Tell customers about your services..."
+                        placeholder={t("providerRegister.businessDescPlaceholder")}
                         rows={4}
                       />
                     </div>
@@ -181,21 +194,21 @@ const ProviderRegister = () => {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <MapPin className="h-5 w-5 text-primary" />
-                      Location & Working Hours
+                      {t("providerRegister.locationHours")}
                     </CardTitle>
                     <CardDescription>
-                      Set your business location and availability
+                      {t("providerRegister.locationHoursDesc")}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="address">Business Address</Label>
+                      <Label htmlFor="address">{t("providerRegister.businessAddress")}</Label>
                       <div className="relative">
-                        <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                        <MapPin className={`absolute ${isRTL ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground`} />
                         <Input
                           id="address"
-                          placeholder="Enter your business address"
-                          className="pl-10"
+                          placeholder={t("providerRegister.businessAddressPlaceholder")}
+                          className={isRTL ? "pr-10" : "pl-10"}
                           required
                         />
                       </div>
@@ -206,32 +219,32 @@ const ProviderRegister = () => {
                       <div className="text-center">
                         <MapPin className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
                         <p className="text-sm text-muted-foreground">
-                          Pin your location on the map
+                          {t("providerRegister.pinLocation")}
                         </p>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="openTime">Opening Time</Label>
+                        <Label htmlFor="openTime">{t("providerRegister.openingTime")}</Label>
                         <div className="relative">
-                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                          <Clock className={`absolute ${isRTL ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground`} />
                           <Input
                             id="openTime"
                             type="time"
-                            className="pl-10"
+                            className={isRTL ? "pr-10" : "pl-10"}
                             required
                           />
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="closeTime">Closing Time</Label>
+                        <Label htmlFor="closeTime">{t("providerRegister.closingTime")}</Label>
                         <div className="relative">
-                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                          <Clock className={`absolute ${isRTL ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground`} />
                           <Input
                             id="closeTime"
                             type="time"
-                            className="pl-10"
+                            className={isRTL ? "pr-10" : "pl-10"}
                             required
                           />
                         </div>
@@ -239,19 +252,17 @@ const ProviderRegister = () => {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Working Days</Label>
+                      <Label>{t("providerRegister.workingDays")}</Label>
                       <div className="flex flex-wrap gap-2">
-                        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
-                          (day) => (
-                            <Badge
-                              key={day}
-                              variant="outline"
-                              className="cursor-pointer hover:bg-primary hover:text-primary-foreground"
-                            >
-                              {day}
-                            </Badge>
-                          )
-                        )}
+                        {days.map((day) => (
+                          <Badge
+                            key={day.key}
+                            variant="outline"
+                            className="cursor-pointer hover:bg-primary hover:text-primary-foreground"
+                          >
+                            {day.label}
+                          </Badge>
+                        ))}
                       </div>
                     </div>
                   </CardContent>
@@ -263,10 +274,10 @@ const ProviderRegister = () => {
                 <>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      ✨ Services & Pricing
+                      ✨ {t("providerRegister.servicesPricing")}
                     </CardTitle>
                     <CardDescription>
-                      Add the services you offer and set your prices
+                      {t("providerRegister.servicesPricingDesc")}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -276,7 +287,7 @@ const ProviderRegister = () => {
                         className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg"
                       >
                         <Input
-                          placeholder="Service name"
+                          placeholder={t("providerRegister.serviceName")}
                           value={service.name}
                           onChange={(e) => {
                             const newServices = [...services];
@@ -286,7 +297,7 @@ const ProviderRegister = () => {
                           className="flex-1"
                         />
                         <Input
-                          placeholder="Price"
+                          placeholder={t("providerRegister.price")}
                           type="number"
                           value={service.price}
                           onChange={(e) => {
@@ -296,6 +307,7 @@ const ProviderRegister = () => {
                           }}
                           className="w-24"
                         />
+                        <span className="text-sm text-muted-foreground">{t("currency.sar")}</span>
                         {services.length > 1 && (
                           <Button
                             type="button"
@@ -316,7 +328,7 @@ const ProviderRegister = () => {
                       className="w-full gap-2"
                     >
                       <Plus className="h-4 w-4" />
-                      Add Service
+                      {t("providerRegister.addService")}
                     </Button>
                   </CardContent>
                 </>
@@ -330,17 +342,17 @@ const ProviderRegister = () => {
                     variant="outline"
                     onClick={() => setStep(step - 1)}
                   >
-                    Back
+                    {t("action.back")}
                   </Button>
                 ) : (
                   <div />
                 )}
                 <Button type="submit" disabled={isLoading}>
                   {step < 3
-                    ? "Continue"
+                    ? t("action.continue")
                     : isLoading
-                    ? "Submitting..."
-                    : "Submit Application"}
+                    ? t("providerRegister.submitting")
+                    : t("providerRegister.submitApplication")}
                 </Button>
               </CardContent>
             </form>
