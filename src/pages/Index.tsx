@@ -290,9 +290,9 @@ const Index = () => {
         <div className="container mx-auto px-4">
           <div className="grid md:grid-cols-4 gap-8">
             <div>
-              <div className="flex items-center gap-2 mb-4">
-                <img src={logo} alt="Wash Off" className="h-8 w-auto brightness-0 invert" />
+              <div className="flex items-center gap-3 mb-4">
                 <span className="text-xl font-bold">{t("app.name")}</span>
+                <img src={logo} alt="Wash Off" className="h-10 w-auto" />
               </div>
               <p className="text-secondary-foreground/70 text-sm">
                 {t("app.tagline")}
