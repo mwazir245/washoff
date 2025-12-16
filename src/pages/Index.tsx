@@ -97,15 +97,13 @@ const Index = () => {
 
         <div className="container mx-auto px-4 py-20 relative z-10">
           <div className="max-w-3xl mx-auto text-center">
-            <div className="flex items-center justify-center gap-4 mb-6 animate-fade-in">
-              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-primary-foreground">
-                {t("hero.titleHighlight")}
-              </h1>
-              <img src={logo} alt="Wash Off" className="h-16 md:h-20 w-auto" />
+            <div className="flex justify-center mb-6 animate-float">
+              <img src={logo} alt="Wash Off" className="h-20 w-auto" />
             </div>
-            <p className="text-xl md:text-2xl font-medium text-primary-foreground/90 mb-2 animate-fade-in">
-              {t("hero.title")}
-            </p>
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-secondary mb-6 animate-fade-in">
+              {t("hero.title")}{" "}
+              <span className="text-gradient">{t("hero.titleHighlight")}</span>
+            </h1>
             <p className="text-lg md:text-xl text-muted-foreground mb-8 animate-fade-in">
               {t("hero.subtitle")}
             </p>
