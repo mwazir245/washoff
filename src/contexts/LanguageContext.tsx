@@ -111,6 +111,16 @@ export const translations = {
     "auth.hasAccount": "Already have an account?",
     "auth.or": "or",
     "auth.continueWithGoogle": "Continue with Google",
+    "auth.signingIn": "Signing in...",
+    "auth.signingUp": "Creating account...",
+    "auth.signUpSuccess": "Account created successfully!",
+    "auth.signUpSuccessDesc": "You can now sign in with your credentials.",
+    "auth.errorInvalidCredentials": "Invalid email or password",
+    "auth.errorEmailTaken": "This email is already registered",
+    "auth.errorWeakPassword": "Password must be at least 6 characters",
+    "auth.errorGeneral": "An error occurred. Please try again.",
+    "auth.fullName": "Full Name",
+    "auth.fullNamePlaceholder": "Enter your full name",
     
     // Orders
     "orders.title": "My Orders",
@@ -478,6 +488,16 @@ export const translations = {
     "auth.hasAccount": "لديك حساب بالفعل؟",
     "auth.or": "أو",
     "auth.continueWithGoogle": "المتابعة مع جوجل",
+    "auth.signingIn": "جاري تسجيل الدخول...",
+    "auth.signingUp": "جاري إنشاء الحساب...",
+    "auth.signUpSuccess": "تم إنشاء الحساب بنجاح!",
+    "auth.signUpSuccessDesc": "يمكنك الآن تسجيل الدخول ببياناتك.",
+    "auth.errorInvalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة",
+    "auth.errorEmailTaken": "هذا البريد الإلكتروني مسجل مسبقاً",
+    "auth.errorWeakPassword": "كلمة المرور يجب أن تكون 6 أحرف على الأقل",
+    "auth.errorGeneral": "حدث خطأ. يرجى المحاولة مرة أخرى.",
+    "auth.fullName": "الاسم الكامل",
+    "auth.fullNamePlaceholder": "أدخل اسمك الكامل",
     
     // Orders
     "orders.title": "طلباتي",

@@ -1,15 +1,25 @@
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { Menu, X, MapPin } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Menu, X, MapPin, User, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import LanguageToggle from "@/components/LanguageToggle";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useAuth } from "@/contexts/AuthContext";
 import logo from "@/assets/logo.png";
 
 const Header = () => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const { t, isRTL } = useLanguage();
+  const { user, signOut, loading } = useAuth();
 
   const navItems = [
     { label: t("nav.home"), href: "/" },
@@ -18,6 +28,11 @@ const Header = () => {
     { label: t("nav.donation"), href: "/donation" },
     { label: t("nav.forProviders"), href: "/provider/register" },
   ];
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/");
+  };
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-md border-b border-border/50 shadow-sm">
@@ -53,14 +68,52 @@ const Header = () => {
               <MapPin className={`h-4 w-4 ${isRTL ? "ml-2" : "mr-0"}`} />
               <span className="text-sm">{t("nav.setLocation")}</span>
             </Button>
-            <Link to="/auth">
-              <Button variant="outline" size="sm">
-                {t("nav.signIn")}
-              </Button>
-            </Link>
-            <Link to="/auth?mode=signup">
-              <Button size="sm">{t("nav.getStarted")}</Button>
-            </Link>
+            
+            {!loading && (
+              <>
+                {user ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-2">
+                        <User className="h-4 w-4" />
+                        <span className="max-w-[120px] truncate">
+                          {user.user_metadata?.full_name || user.email?.split("@")[0]}
+                        </span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align={isRTL ? "start" : "end"}>
+                      <DropdownMenuItem asChild>
+                        <Link to="/profile" className="cursor-pointer">
+                          <User className={`h-4 w-4 ${isRTL ? "ml-2" : "mr-2"}`} />
+                          {t("nav.profile")}
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link to="/orders" className="cursor-pointer">
+                          {t("nav.orders")}
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer text-destructive">
+                        <LogOut className={`h-4 w-4 ${isRTL ? "ml-2" : "mr-2"}`} />
+                        {t("profile.logout")}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <>
+                    <Link to="/auth">
+                      <Button variant="outline" size="sm">
+                        {t("nav.signIn")}
+                      </Button>
+                    </Link>
+                    <Link to="/auth?mode=signup">
+                      <Button size="sm">{t("nav.getStarted")}</Button>
+                    </Link>
+                  </>
+                )}
+              </>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -94,14 +147,47 @@ const Header = () => {
                 </Link>
               ))}
               <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-border">
-                <Link to="/auth" onClick={() => setIsOpen(false)}>
-                  <Button variant="outline" className="w-full">
-                    {t("nav.signIn")}
-                  </Button>
-                </Link>
-                <Link to="/auth?mode=signup" onClick={() => setIsOpen(false)}>
-                  <Button className="w-full">{t("nav.getStarted")}</Button>
-                </Link>
+                {!loading && (
+                  <>
+                    {user ? (
+                      <>
+                        <Link to="/profile" onClick={() => setIsOpen(false)}>
+                          <Button variant="outline" className="w-full gap-2">
+                            <User className="h-4 w-4" />
+                            {t("nav.profile")}
+                          </Button>
+                        </Link>
+                        <Link to="/orders" onClick={() => setIsOpen(false)}>
+                          <Button variant="outline" className="w-full">
+                            {t("nav.orders")}
+                          </Button>
+                        </Link>
+                        <Button 
+                          variant="destructive" 
+                          className="w-full gap-2"
+                          onClick={() => {
+                            handleSignOut();
+                            setIsOpen(false);
+                          }}
+                        >
+                          <LogOut className="h-4 w-4" />
+                          {t("profile.logout")}
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Link to="/auth" onClick={() => setIsOpen(false)}>
+                          <Button variant="outline" className="w-full">
+                            {t("nav.signIn")}
+                          </Button>
+                        </Link>
+                        <Link to="/auth?mode=signup" onClick={() => setIsOpen(false)}>
+                          <Button className="w-full">{t("nav.getStarted")}</Button>
+                        </Link>
+                      </>
+                    )}
+                  </>
+                )}
               </div>
             </nav>
           </div>
