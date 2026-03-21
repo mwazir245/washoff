@@ -1,0 +1,478 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                        String    @id
+  fullName                  String    @map("full_name")
+  email                     String    @unique
+  phone                     String?
+  passwordSalt              String?   @map("password_salt")
+  passwordHash              String?   @map("password_hash")
+  role                      String
+  status                    String
+  linkedEntityType          String?   @map("linked_entity_type")
+  linkedHotelId             String?   @map("linked_hotel_id")
+  linkedProviderId          String?   @map("linked_provider_id")
+  activationState           String    @map("activation_state")
+  activationTokenHash       String?   @map("activation_token_hash")
+  activationTokenIssuedAt   DateTime? @map("activation_token_issued_at") @db.Timestamptz(6)
+  activationTokenExpiresAt  DateTime? @map("activation_token_expires_at") @db.Timestamptz(6)
+  activationTokenUsedAt     DateTime? @map("activation_token_used_at") @db.Timestamptz(6)
+  activationEligibleAt      DateTime? @map("activation_eligible_at") @db.Timestamptz(6)
+  activatedAt               DateTime? @map("activated_at") @db.Timestamptz(6)
+  passwordResetState        String    @default("idle") @map("password_reset_state")
+  passwordResetTokenHash    String?   @map("password_reset_token_hash")
+  passwordResetRequestedAt  DateTime? @map("password_reset_requested_at") @db.Timestamptz(6)
+  passwordResetIssuedAt     DateTime? @map("password_reset_issued_at") @db.Timestamptz(6)
+  passwordResetTokenExpiresAt DateTime? @map("password_reset_token_expires_at") @db.Timestamptz(6)
+  passwordResetTokenUsedAt  DateTime? @map("password_reset_token_used_at") @db.Timestamptz(6)
+  passwordResetCompletedAt  DateTime? @map("password_reset_completed_at") @db.Timestamptz(6)
+  suspendedAt               DateTime? @map("suspended_at") @db.Timestamptz(6)
+  suspendedByAccountId      String?   @map("suspended_by_account_id")
+  suspendedByRole           String?   @map("suspended_by_role")
+  suspensionReasonAr        String?   @map("suspension_reason_ar")
+  reactivatedAt             DateTime? @map("reactivated_at") @db.Timestamptz(6)
+  reactivatedByAccountId    String?   @map("reactivated_by_account_id")
+  reactivatedByRole         String?   @map("reactivated_by_role")
+  reactivationReasonAr      String?   @map("reactivation_reason_ar")
+  lastLoginAt               DateTime? @map("last_login_at") @db.Timestamptz(6)
+  createdAt                 DateTime  @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime  @map("updated_at") @db.Timestamptz(6)
+
+  @@index([activationTokenHash])
+  @@index([passwordResetTokenHash])
+
+  @@map("accounts")
+}
+
+model AccountSession {
+  id                String    @id
+  accountId         String    @map("account_id")
+  tokenHash         String    @map("token_hash")
+  role              String
+  linkedEntityType  String?   @map("linked_entity_type")
+  linkedEntityId    String?   @map("linked_entity_id")
+  createdAt         DateTime  @map("created_at") @db.Timestamptz(6)
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(6)
+  lastSeenAt        DateTime? @map("last_seen_at") @db.Timestamptz(6)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedReasonAr   String?   @map("revoked_reason_ar")
+  revokedByAccountId String?  @map("revoked_by_account_id")
+  revokedByRole     String?   @map("revoked_by_role")
+
+  @@index([accountId])
+  @@index([tokenHash])
+  @@map("account_sessions")
+}
+
+model IdentityAuditEvent {
+  id               String   @id
+  accountId        String?  @map("account_id")
+  sessionId        String?  @map("session_id")
+  eventType        String   @map("event_type")
+  actorAccountId   String?  @map("actor_account_id")
+  actorRole        String?  @map("actor_role")
+  linkedEntityType String?  @map("linked_entity_type")
+  linkedEntityId   String?  @map("linked_entity_id")
+  detailsAr        String?  @map("details_ar")
+  metadataJson     Json?    @map("metadata_json")
+  createdAt        DateTime @map("created_at") @db.Timestamptz(6)
+
+  @@index([accountId, createdAt])
+  @@index([eventType, createdAt])
+  @@map("identity_audit_events")
+}
+
+model PlatformSettings {
+  id                           String   @id
+  siteNameAr                   String   @map("site_name_ar")
+  siteNameEn                   String   @map("site_name_en")
+  siteTaglineAr                String   @map("site_tagline_ar")
+  siteTaglineEn                String   @map("site_tagline_en")
+  mailFromNameAr               String   @map("mail_from_name_ar")
+  mailFromEmail                String   @map("mail_from_email")
+  supportEmail                 String?  @map("support_email")
+  supportPhone                 String?  @map("support_phone")
+  registrationEnabled          Boolean  @default(true) @map("registration_enabled")
+  hotelRegistrationEnabled     Boolean  @default(true) @map("hotel_registration_enabled")
+  providerRegistrationEnabled  Boolean  @default(true) @map("provider_registration_enabled")
+  requireAdminApprovalForHotels Boolean @default(true) @map("require_admin_approval_for_hotels")
+  requireAdminApprovalForProviders Boolean @default(true) @map("require_admin_approval_for_providers")
+  updatedAt                    DateTime @map("updated_at") @db.Timestamptz(6)
+  updatedByAccountId           String?  @map("updated_by_account_id")
+
+  @@map("platform_settings")
+}
+
+model PlatformSettingsAudit {
+  id               String   @id
+  settingsKey      String   @map("settings_key")
+  oldValueJson     Json?    @map("old_value_json")
+  newValueJson     Json     @map("new_value_json")
+  changedByAccountId String? @map("changed_by_account_id")
+  changedByRole    String?  @map("changed_by_role")
+  changedAt        DateTime @map("changed_at") @db.Timestamptz(6)
+  notesAr          String?  @map("notes_ar")
+
+  @@index([changedAt])
+  @@map("platform_settings_audit")
+}
+
+model PlatformContentEntry {
+  id               String   @id
+  pageKey          String   @map("page_key")
+  sectionKey       String   @map("section_key")
+  contentKey       String   @map("content_key")
+  compositeKey     String   @unique @map("composite_key")
+  contentType      String   @map("content_type")
+  labelAr          String   @map("label_ar")
+  labelEn          String   @map("label_en")
+  valueAr          String   @map("value_ar")
+  valueEn          String   @map("value_en")
+  descriptionAr    String?  @map("description_ar")
+  descriptionEn    String?  @map("description_en")
+  active           Boolean  @default(true)
+  sortOrder        Int      @default(0) @map("sort_order")
+  updatedAt        DateTime @map("updated_at") @db.Timestamptz(6)
+  updatedByAccountId String? @map("updated_by_account_id")
+
+  @@index([pageKey, sortOrder])
+  @@map("platform_content_entries")
+}
+
+model PlatformContentAudit {
+  id               String   @id
+  contentEntryId   String   @map("content_entry_id")
+  pageKey          String   @map("page_key")
+  sectionKey       String   @map("section_key")
+  contentKey       String   @map("content_key")
+  oldValueAr       String?  @map("old_value_ar")
+  oldValueEn       String?  @map("old_value_en")
+  newValueAr       String   @map("new_value_ar")
+  newValueEn       String   @map("new_value_en")
+  changedByAccountId String? @map("changed_by_account_id")
+  changedByRole    String?  @map("changed_by_role")
+  changedAt        DateTime @map("changed_at") @db.Timestamptz(6)
+  notesAr          String?  @map("notes_ar")
+
+  @@index([pageKey, changedAt])
+  @@map("platform_content_audit")
+}
+
+model Hotel {
+  id                       String   @id
+  code                     String   @unique
+  displayNameAr            String   @map("display_name_ar")
+  displayNameEn            String?  @map("display_name_en")
+  legalEntityName          String?  @map("legal_entity_name")
+  hotelClassification      String   @default("other") @map("hotel_classification")
+  roomCount                Int      @default(0) @map("room_count")
+  countryCode              String   @map("country_code")
+  city                     String
+  district                 String?
+  line1                    String?  @map("line_1")
+  postalCode               String?  @map("postal_code")
+  latitude                 Float?
+  longitude                Float?
+  timezone                 String
+  contactName              String?  @map("contact_name")
+  contactPhone             String?  @map("contact_phone")
+  contactEmail             String?  @map("contact_email")
+  serviceLevel             String   @default("standard") @map("service_level")
+  operatingHours           String   @default("") @map("operating_hours")
+  requiresDailyPickup      Boolean  @default(false) @map("requires_daily_pickup")
+  addressText              String   @default("") @map("address_text")
+  pickupLocation           String?  @map("pickup_location")
+  hasLoadingArea           Boolean  @default(false) @map("has_loading_area")
+  accessNotes              String?  @map("access_notes")
+  taxRegistrationNumber    String   @default("") @map("tax_registration_number")
+  commercialRegistrationNumber String @default("") @map("commercial_registration_number")
+  commercialRegistrationFileJson Json? @map("commercial_registration_file_json")
+  delegationLetterFileJson Json? @map("delegation_letter_file_json")
+  delegationStatus         String   @default("not_provided") @map("delegation_status")
+  contractedServiceIdsJson Json     @map("contracted_service_ids_json")
+  active                   Boolean  @default(true)
+  notesAr                  String?  @map("notes_ar")
+  onboardingStatus         String   @default("approved") @map("onboarding_status")
+  submittedAt              DateTime @map("submitted_at") @db.Timestamptz(6)
+  reviewedAt               DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewedByRole           String?  @map("reviewed_by_role")
+  reviewedById             String?  @map("reviewed_by_id")
+  reviewNotesAr            String?  @map("review_notes_ar")
+  createdAt                DateTime @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime @map("updated_at") @db.Timestamptz(6)
+
+  @@map("hotels")
+}
+
+model Service {
+  id                     String  @id
+  code                   String  @unique
+  nameAr                 String  @map("name_ar")
+  nameEn                 String? @map("name_en")
+  descriptionAr          String? @map("description_ar")
+  descriptionEn          String? @map("description_en")
+  category               String
+  billingUnit            String  @map("billing_unit")
+  defaultUnitPriceSar    Decimal @map("default_unit_price_sar") @db.Decimal(12, 2)
+  defaultTurnaroundHours Int     @map("default_turnaround_hours")
+  supportsRush           Boolean @default(false) @map("supports_rush")
+  active                 Boolean @default(true)
+
+  @@map("services")
+}
+
+model Provider {
+  id                    String   @id
+  code                  String   @unique
+  legalNameAr           String   @map("legal_name_ar")
+  legalNameEn           String?  @map("legal_name_en")
+  displayNameAr         String   @map("display_name_ar")
+  displayNameEn         String?  @map("display_name_en")
+  countryCode           String   @map("country_code")
+  city                  String
+  district              String?
+  line1                 String?  @map("line_1")
+  postalCode            String?  @map("postal_code")
+  latitude              Float?
+  longitude             Float?
+  timezone              String
+  contactName           String?  @map("contact_name")
+  contactPhone          String?  @map("contact_phone")
+  contactEmail          String?  @map("contact_email")
+  serviceAreaCitiesJson Json     @map("service_area_cities_json")
+  active                Boolean  @default(true)
+  notesAr               String?  @map("notes_ar")
+  onboardingStatus      String   @default("approved") @map("onboarding_status")
+  submittedAt           DateTime @map("submitted_at") @db.Timestamptz(6)
+  reviewedAt            DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewedByRole        String?  @map("reviewed_by_role")
+  reviewedById          String?  @map("reviewed_by_id")
+  reviewNotesAr         String?  @map("review_notes_ar")
+  createdAt             DateTime @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime @map("updated_at") @db.Timestamptz(6)
+
+  @@map("providers")
+}
+
+model ProviderCapability {
+  providerId              String   @map("provider_id")
+  serviceId               String   @map("service_id")
+  serviceNameAr           String   @map("service_name_ar")
+  serviceNameEn           String?  @map("service_name_en")
+  active                  Boolean  @default(true)
+  unitPriceSar            Decimal  @map("unit_price_sar") @db.Decimal(12, 2)
+  maxDailyKg              Decimal  @map("max_daily_kg") @db.Decimal(12, 2)
+  maxSingleOrderKg        Decimal  @map("max_single_order_kg") @db.Decimal(12, 2)
+  rushSupported           Boolean  @default(false) @map("rush_supported")
+  supportedCityCodesJson  Json     @map("supported_city_codes_json")
+  defaultTurnaroundHours  Int      @map("default_turnaround_hours")
+  minimumPickupLeadHours  Int      @map("minimum_pickup_lead_hours")
+  pickupWindowStartHour   Int      @map("pickup_window_start_hour")
+  pickupWindowEndHour     Int      @map("pickup_window_end_hour")
+
+  @@id([providerId, serviceId])
+  @@map("provider_capabilities")
+}
+
+model ProviderCapacity {
+  providerId        String   @map("provider_id")
+  capacityDate      String   @map("capacity_date") @db.VarChar(10)
+  totalKg           Decimal  @map("total_kg") @db.Decimal(12, 2)
+  committedKg       Decimal  @map("committed_kg") @db.Decimal(12, 2)
+  reservedKg        Decimal  @map("reserved_kg") @db.Decimal(12, 2)
+  availableKg       Decimal  @map("available_kg") @db.Decimal(12, 2)
+  utilizationRatio  Decimal  @map("utilization_ratio") @db.Decimal(6, 4)
+  status            String
+  cutoffAt          DateTime? @map("cutoff_at") @db.Timestamptz(6)
+  createdAt         DateTime @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @map("updated_at") @db.Timestamptz(6)
+
+  @@id([providerId, capacityDate])
+  @@map("provider_capacity")
+}
+
+model ProviderPerformanceStats {
+  providerId          String   @id @map("provider_id")
+  rating              Decimal  @db.Decimal(4, 2)
+  acceptanceRate      Decimal  @map("acceptance_rate") @db.Decimal(6, 4)
+  onTimePickupRate    Decimal  @map("on_time_pickup_rate") @db.Decimal(6, 4)
+  onTimeDeliveryRate  Decimal  @map("on_time_delivery_rate") @db.Decimal(6, 4)
+  qualityScore        Decimal  @map("quality_score") @db.Decimal(8, 2)
+  disputeRate         Decimal  @map("dispute_rate") @db.Decimal(6, 4)
+  reassignmentRate    Decimal  @map("reassignment_rate") @db.Decimal(6, 4)
+  completedOrders     Int      @map("completed_orders")
+  cancelledOrders     Int      @map("cancelled_orders")
+  lastEvaluatedAt     DateTime @map("last_evaluated_at") @db.Timestamptz(6)
+
+  @@map("provider_performance_stats")
+}
+
+model Order {
+  id                   String    @id
+  hotelId              String    @map("hotel_id")
+  providerId           String?   @map("provider_id")
+  hotelSnapshotJson    Json      @map("hotel_snapshot_json")
+  providerSnapshotJson Json?     @map("provider_snapshot_json")
+  statusHistoryJson    Json?     @map("status_history_json")
+  assignmentMode       String    @map("assignment_mode")
+  status               String
+  priority             String
+  currency             String
+  estimatedSubtotalSar Decimal   @map("estimated_subtotal_sar") @db.Decimal(12, 2)
+  totalItemCount       Decimal   @map("total_item_count") @db.Decimal(12, 2)
+  pickupAt             DateTime  @map("pickup_at") @db.Timestamptz(6)
+  notesAr              String?   @map("notes_ar")
+  statusUpdatedAt      DateTime  @map("status_updated_at") @db.Timestamptz(6)
+  progressPercent      Decimal?  @map("progress_percent") @db.Decimal(5, 2)
+  activeAssignmentId   String?   @map("active_assignment_id")
+  slaWindowJson        Json      @map("sla_window_json")
+  createdAt            DateTime  @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @map("updated_at") @db.Timestamptz(6)
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id                    String   @id
+  orderId               String   @map("order_id")
+  serviceId             String   @map("service_id")
+  serviceNameAr         String   @map("service_name_ar")
+  serviceNameEn         String?  @map("service_name_en")
+  quantity              Decimal  @db.Decimal(12, 2)
+  unit                  String
+  unitPriceSar          Decimal  @map("unit_price_sar") @db.Decimal(12, 2)
+  estimatedLineTotalSar Decimal  @map("estimated_line_total_sar") @db.Decimal(12, 2)
+  notesAr               String?  @map("notes_ar")
+
+  @@map("order_items")
+}
+
+model Assignment {
+  id                    String    @id
+  orderId               String    @map("order_id")
+  hotelId               String    @map("hotel_id")
+  providerId            String    @map("provider_id")
+  attemptNumber         Int       @map("attempt_number")
+  status                String
+  assignedAt            DateTime  @map("assigned_at") @db.Timestamptz(6)
+  responseDueAt         DateTime? @map("response_due_at") @db.Timestamptz(6)
+  respondedAt           DateTime? @map("responded_at") @db.Timestamptz(6)
+  acceptedAt            DateTime? @map("accepted_at") @db.Timestamptz(6)
+  scoreBreakdownJson    Json      @map("score_breakdown_json")
+  eligibilityResultJson Json      @map("eligibility_result_json")
+
+  @@map("assignments")
+}
+
+model AssignmentHistory {
+  id           String    @id
+  assignmentId String    @map("assignment_id")
+  orderId      String    @map("order_id")
+  providerId   String    @map("provider_id")
+  attemptNumber Int      @map("attempt_number")
+  fromStatus   String?   @map("from_status")
+  toStatus     String    @map("to_status")
+  changedAt    DateTime  @map("changed_at") @db.Timestamptz(6)
+  actorRole    String    @map("actor_role")
+  reasonAr     String?   @map("reason_ar")
+
+  @@map("assignment_history")
+}
+
+model MatchingLog {
+  id                    String   @id
+  matchingRunId         String   @map("matching_run_id")
+  orderId               String   @map("order_id")
+  providerId            String   @map("provider_id")
+  decision              String
+  eligibilityResultJson Json     @map("eligibility_result_json")
+  scoreBreakdownJson    Json     @map("score_breakdown_json")
+  evaluatedAt           DateTime @map("evaluated_at") @db.Timestamptz(6)
+  notesAr               String?  @map("notes_ar")
+
+  @@map("matching_logs")
+}
+
+model ReassignmentEvent {
+  id                   String   @id
+  orderId              String   @map("order_id")
+  previousAssignmentId String?  @map("previous_assignment_id")
+  previousProviderId   String?  @map("previous_provider_id")
+  nextProviderId       String?  @map("next_provider_id")
+  reason               String
+  actorRole            String   @map("actor_role")
+  createdAt            DateTime @map("created_at") @db.Timestamptz(6)
+  notesAr              String?  @map("notes_ar")
+
+  @@map("reassignment_events")
+}
+
+model SLAHistory {
+  id         String    @id
+  orderId    String    @map("order_id")
+  checkpoint String
+  targetAt   DateTime  @map("target_at") @db.Timestamptz(6)
+  actualAt   DateTime? @map("actual_at") @db.Timestamptz(6)
+  status     String
+  recordedAt DateTime  @map("recorded_at") @db.Timestamptz(6)
+  notesAr    String?   @map("notes_ar")
+
+  @@map("sla_history")
+}
+
+model Settlement {
+  id             String    @id
+  orderId        String    @map("order_id")
+  hotelId        String    @map("hotel_id")
+  providerId     String    @map("provider_id")
+  currency       String
+  status         String
+  subtotalSar    Decimal   @map("subtotal_sar") @db.Decimal(12, 2)
+  platformFeeSar Decimal   @map("platform_fee_sar") @db.Decimal(12, 2)
+  adjustmentsSar Decimal   @map("adjustments_sar") @db.Decimal(12, 2)
+  totalSar       Decimal   @map("total_sar") @db.Decimal(12, 2)
+  generatedAt    DateTime  @map("generated_at") @db.Timestamptz(6)
+  dueAt          DateTime? @map("due_at") @db.Timestamptz(6)
+  paidAt         DateTime? @map("paid_at") @db.Timestamptz(6)
+
+  @@map("settlements")
+}
+
+model SettlementLineItem {
+  id           String   @id
+  settlementId String   @map("settlement_id")
+  orderItemId  String?  @map("order_item_id")
+  descriptionAr String  @map("description_ar")
+  descriptionEn String? @map("description_en")
+  quantity      Decimal @db.Decimal(12, 2)
+  unitPriceSar  Decimal @map("unit_price_sar") @db.Decimal(12, 2)
+  totalSar      Decimal @map("total_sar") @db.Decimal(12, 2)
+
+  @@map("settlement_line_items")
+}
+
+model Notification {
+  id                String    @id
+  recipientRole     String    @map("recipient_role")
+  recipientEntityId String    @map("recipient_entity_id")
+  channel           String
+  status            String
+  titleAr           String    @map("title_ar")
+  titleEn           String?   @map("title_en")
+  bodyAr            String    @map("body_ar")
+  bodyEn            String?   @map("body_en")
+  orderId           String?   @map("order_id")
+  assignmentId      String?   @map("assignment_id")
+  createdAt         DateTime  @map("created_at") @db.Timestamptz(6)
+  sentAt            DateTime? @map("sent_at") @db.Timestamptz(6)
+  readAt            DateTime? @map("read_at") @db.Timestamptz(6)
+
+  @@map("notifications")
+}

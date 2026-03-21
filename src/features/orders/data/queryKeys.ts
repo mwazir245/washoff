@@ -1,0 +1,21 @@
+export const platformQueryKeys = {
+  authSession: ["auth", "session"] as const,
+  activationTokenStatus: (token: string) => ["auth", "activation-token", token] as const,
+  resetPasswordTokenStatus: (token: string) => ["auth", "reset-token", token] as const,
+  hotelDashboard: ["dashboard", "hotel"] as const,
+  providerDashboard: ["dashboard", "provider"] as const,
+  adminDashboard: ["dashboard", "admin"] as const,
+  adminOrders: ["admin", "orders"] as const,
+  adminMatching: ["admin", "matching"] as const,
+  adminOnboarding: ["admin", "onboarding"] as const,
+  adminAccounts: ["admin", "accounts"] as const,
+  identityAudit: ["admin", "identity-audit"] as const,
+  adminPlatformSettings: ["admin", "platform-settings"] as const,
+  adminPlatformSettingsAudit: ["admin", "platform-settings-audit"] as const,
+  adminPlatformRuntime: ["admin", "platform-runtime"] as const,
+  adminPlatformContent: ["admin", "platform-content"] as const,
+  adminPlatformContentAudit: ["admin", "platform-content-audit"] as const,
+  platformPageContent: (pageKey: string, language: "ar" | "en") =>
+    ["platform-content", pageKey, language] as const,
+  registrationServiceCatalog: ["registration", "service-catalog"] as const,
+};
