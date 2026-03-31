@@ -28,8 +28,8 @@ describe("createApiWashoffPlatformRepository", () => {
     const repository = createApiWashoffPlatformRepository();
 
     await repository.createHotelOrder({
-      serviceIds: ["wash_fold"],
-      itemCount: 10,
+      roomNumber: "1208",
+      items: [{ serviceId: "svc-thobe-dry_clean", quantity: 10 }],
       pickupAt: "2026-03-20T08:00:00.000Z",
       notesAr: "اختبار واجهة API",
     });
@@ -60,7 +60,7 @@ describe("createApiWashoffPlatformRepository", () => {
     );
   });
 
-  it("sends both bearer and session-token headers after login", async () => {
+  it("uses secure cookie-based requests after login", async () => {
     const fetchMock = vi
       .fn()
       .mockImplementationOnce(() =>
@@ -105,9 +105,9 @@ describe("createApiWashoffPlatformRepository", () => {
       2,
       `${WASHOFF_API_BASE_PATH}/orders?scope=all`,
       expect.objectContaining({
+        credentials: "include",
         headers: expect.objectContaining({
-          Authorization: "Bearer session-token-123",
-          "x-washoff-session-token": "session-token-123",
+          "x-washoff-role": "admin",
         }),
       }),
     );

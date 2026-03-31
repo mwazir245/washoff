@@ -1,6 +1,6 @@
-import { ProviderCapacityStatus, type Provider, type ProviderServiceCapability } from "@/features/orders/model/provider";
-import { getOrderQuantityTotal, type Order } from "@/features/orders/model/order";
+import type { Order } from "@/features/orders/model/order";
 import { OnboardingStatus } from "@/features/orders/model/onboarding";
+import type { Provider } from "@/features/orders/model/provider";
 import {
   createEmptyScoreBreakdown,
   EligibilityReasonCode,
@@ -16,7 +16,15 @@ import {
   type ScoreBreakdown,
   type ScoreBreakdownEntry,
 } from "@/features/orders/model/matching";
-import { buildNumericRange, normalizeHigherIsBetter, normalizeLowerIsBetter, roundScore, toPercentageScore } from "@/features/orders/services/matching-helpers";
+import { buildHotelSlaProfile, evaluateSlaCompatibility } from "@/features/orders/model/sla";
+import { ProviderServiceCurrentStatus } from "@/features/orders/model/service";
+import {
+  buildNumericRange,
+  normalizeHigherIsBetter,
+  normalizeLowerIsBetter,
+  roundScore,
+  toPercentageScore,
+} from "@/features/orders/services/matching-helpers";
 
 export interface MatchingEngineOptions {
   evaluatedAt?: string;
@@ -29,17 +37,19 @@ interface EligibleProviderScoringInput {
   eligibilityResult: EligibilityResult;
   estimatedPriceSar: number;
   estimatedTurnaroundHours: number;
-  capacityAvailabilityRatio: number;
-  onTimePerformanceRate: number;
+  distanceKm: number;
+  activeLoadRatio: number;
+  slaComplianceRate: number;
   ratingValue: number;
 }
 
 export const DEFAULT_MATCHING_SCORE_WEIGHTS: MatchingScoreWeights = {
   price: 0.25,
-  slaSpeed: 0.25,
-  rating: 0.2,
-  capacityAvailability: 0.2,
-  onTimePerformance: 0.1,
+  slaSpeed: 0.2,
+  slaComplianceHistory: 0.2,
+  rating: 0.15,
+  geographicProximity: 0.1,
+  activeLoad: 0.1,
 };
 
 const RATING_RANGE = {
@@ -52,127 +62,149 @@ const RATE_RANGE = {
   max: 1,
 };
 
-const normalizeText = (value: string) => {
-  return value.trim().toLocaleLowerCase("ar-SA");
-};
+const DISTANCE_FALLBACK_KM = 50;
 
-const getRequestedServiceIds = (order: Pick<Order, "items">) => {
-  return Array.from(new Set(order.items.map((item) => item.serviceId)));
-};
+const normalizeText = (value: string) => value.trim().toLocaleLowerCase("ar-SA");
 
-const getCapabilityForService = (provider: Provider, serviceId: string) => {
-  return provider.capabilities.find((capability) => capability.serviceId === serviceId && capability.active);
-};
+const getRequestedServiceIds = (order: Pick<Order, "items">) =>
+  Array.from(new Set(order.items.map((item) => item.serviceId)));
 
-const hasServiceAreaCoverage = (provider: Provider, requestedServiceIds: string[], hotelCity: string) => {
-  if (!provider.serviceAreaCities.some((city) => normalizeText(city) === hotelCity)) {
+const getProviderOfferingForService = (provider: Provider, serviceId: string) =>
+  provider.serviceOfferings.find((offering) => offering.serviceId === serviceId);
+
+const getApprovedActiveOfferingForService = (provider: Provider, serviceId: string) =>
+  provider.serviceOfferings.find(
+    (offering) =>
+      offering.serviceId === serviceId &&
+      offering.activeMatrix &&
+      offering.availableMatrix &&
+      offering.currentStatus === ProviderServiceCurrentStatus.Active &&
+      typeof offering.currentApprovedPriceSar === "number",
+  );
+
+const getHotelCityId = (order: Order) => order.hotelSnapshot.cityId;
+
+const getHotelDistrictId = (order: Order) => order.hotelSnapshot.districtId;
+
+const hasSameCity = (order: Order, provider: Provider) =>
+  Boolean(getHotelCityId(order)) && provider.coverage.cityId === getHotelCityId(order);
+
+const hasDistrictCoverage = (order: Order, provider: Provider) => {
+  const hotelDistrictId = getHotelDistrictId(order);
+
+  if (!hasSameCity(order, provider) || !hotelDistrictId) {
     return false;
   }
 
-  return requestedServiceIds
-    .map((serviceId) => getCapabilityForService(provider, serviceId))
-    .filter((capability): capability is ProviderServiceCapability => Boolean(capability))
-    .every((capability) => capability.supportedCityCodes.some((cityCode) => normalizeText(cityCode) === hotelCity));
-};
-
-const getRequestedServiceQuantities = (order: Pick<Order, "items">) => {
-  return order.items.reduce<Record<string, number>>((quantities, item) => {
-    quantities[item.serviceId] = (quantities[item.serviceId] ?? 0) + item.quantity;
-    return quantities;
-  }, {});
-};
-
-const getPickupHourInProviderTimezone = (pickupAt: string, providerTimezone: string) => {
-  try {
-    const formatter = new Intl.DateTimeFormat("en-GB", {
-      hour: "2-digit",
-      hour12: false,
-      timeZone: providerTimezone,
-    });
-
-    return Number(formatter.format(new Date(pickupAt)));
-  } catch {
-    return new Date(pickupAt).getHours();
-  }
-};
-
-const hasMinimumPickupLeadTime = (pickupAt: string, evaluatedAt: string, minimumPickupLeadHours: number) => {
-  const pickupTime = new Date(pickupAt).getTime();
-  const evaluationTime = new Date(evaluatedAt).getTime();
-
-  if (Number.isNaN(pickupTime) || Number.isNaN(evaluationTime)) {
-    return false;
-  }
-
-  const leadHours = (pickupTime - evaluationTime) / (1000 * 60 * 60);
-  return leadHours >= minimumPickupLeadHours;
-};
-
-const isPickupHourWithinWindow = (pickupHour: number, capability: ProviderServiceCapability) => {
-  const { startHour, endHour } = capability.pickupWindow;
-
-  if (startHour === endHour) {
+  if (provider.coverage.coverageType === "city_wide") {
     return true;
   }
 
-  if (startHour < endHour) {
-    return pickupHour >= startHour && pickupHour < endHour;
+  return provider.coverage.coveredDistrictIds.includes(hotelDistrictId);
+};
+
+const hasServiceCapability = (provider: Provider, requestedServiceIds: string[]) =>
+  requestedServiceIds.every((serviceId) => {
+    const offering = getProviderOfferingForService(provider, serviceId);
+    return Boolean(offering && offering.activeMatrix && offering.availableMatrix);
+  });
+
+const hasApprovedActivePrice = (provider: Provider, requestedServiceIds: string[]) =>
+  requestedServiceIds.every((serviceId) => Boolean(getApprovedActiveOfferingForService(provider, serviceId)));
+
+const getActiveLoadRatio = (provider: Provider) => {
+  const maxActiveOrders = provider.operationalLoad.maxActiveOrders;
+
+  if (maxActiveOrders <= 0) {
+    return 1;
   }
 
-  return pickupHour >= startHour || pickupHour < endHour;
+  return Math.min(provider.operationalLoad.currentActiveOrders / maxActiveOrders, 2);
 };
 
-const supportsRequestedPickupTime = (
-  capability: ProviderServiceCapability,
-  pickupAt: string,
-  providerTimezone: string,
-  evaluatedAt: string,
+const isWithinActiveLoadThreshold = (provider: Provider) => {
+  const maxActiveOrders = provider.operationalLoad.maxActiveOrders;
+
+  if (maxActiveOrders <= 0) {
+    return false;
+  }
+
+  return provider.operationalLoad.currentActiveOrders <= maxActiveOrders;
+};
+
+const getRequiredSlaForOrder = (order: Order) =>
+  order.slaWindow.requiredSla ?? buildHotelSlaProfile(order.hotelId, "standard");
+
+const getSlaCompatibility = (order: Order, provider: Provider) =>
+  evaluateSlaCompatibility(getRequiredSlaForOrder(order), provider.slaProfile);
+
+const resolveEligibilityReasonLabels = (reasonCodes: EligibilityReasonCode[]) =>
+  reasonCodes.map((reasonCode) => eligibilityReasonLabelsAr[reasonCode]);
+
+const haversineDistanceKm = (
+  originLatitude: number,
+  originLongitude: number,
+  targetLatitude: number,
+  targetLongitude: number,
 ) => {
-  const pickupHour = getPickupHourInProviderTimezone(pickupAt, providerTimezone);
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const deltaLatitude = toRadians(targetLatitude - originLatitude);
+  const deltaLongitude = toRadians(targetLongitude - originLongitude);
+  const a =
+    Math.sin(deltaLatitude / 2) * Math.sin(deltaLatitude / 2) +
+    Math.cos(toRadians(originLatitude)) *
+      Math.cos(toRadians(targetLatitude)) *
+      Math.sin(deltaLongitude / 2) *
+      Math.sin(deltaLongitude / 2);
 
-  return (
-    hasMinimumPickupLeadTime(pickupAt, evaluatedAt, capability.minimumPickupLeadHours) &&
-    isPickupHourWithinWindow(pickupHour, capability)
-  );
+  return earthRadiusKm * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 };
 
-const resolveEligibilityReasonLabels = (reasonCodes: EligibilityReasonCode[]) => {
-  return reasonCodes.map((reasonCode) => eligibilityReasonLabelsAr[reasonCode]);
+const getGeographicDistanceKm = (order: Order, provider: Provider) => {
+  const providerLatitude = provider.address.latitude;
+  const providerLongitude = provider.address.longitude;
+  const hotelLatitude = order.hotelSnapshot.latitude;
+  const hotelLongitude = order.hotelSnapshot.longitude;
+
+  if (
+    typeof hotelLatitude !== "number" ||
+    typeof hotelLongitude !== "number" ||
+    typeof providerLatitude !== "number" ||
+    typeof providerLongitude !== "number"
+  ) {
+    return DISTANCE_FALLBACK_KM;
+  }
+
+  return roundScore(
+    haversineDistanceKm(
+      hotelLatitude,
+      hotelLongitude,
+      providerLatitude,
+      providerLongitude,
+    ),
+    3,
+  );
 };
 
 const buildCapabilityMatch = (
   provider: Provider,
   order: Order,
-  evaluatedAt: string,
   reasonCodes: EligibilityReasonCode[],
 ): ProviderCapabilityMatch => {
-  const hotelCity = normalizeText(order.hotelSnapshot.city);
   const requestedServiceIds = getRequestedServiceIds(order);
-  const requestedQuantities = getRequestedServiceQuantities(order);
-  const matchedServiceIds = requestedServiceIds.filter((serviceId) => Boolean(getCapabilityForService(provider, serviceId)));
-  const unsupportedServiceIds = requestedServiceIds.filter((serviceId) => !matchedServiceIds.includes(serviceId));
-  const sameCity = normalizeText(provider.address.city) === hotelCity;
-  const serviceAreaCovered = hasServiceAreaCoverage(provider, requestedServiceIds, hotelCity);
-  const supportsRequestedQuantities = requestedServiceIds.every((serviceId) => {
-    const capability = getCapabilityForService(provider, serviceId);
-    const requestedQuantity = requestedQuantities[serviceId] ?? 0;
-
-    if (!capability) {
-      return false;
-    }
-
-    return requestedQuantity <= capability.maxSingleOrderKg && requestedQuantity <= capability.maxDailyKg;
-  });
-  const supportsPickupTime = requestedServiceIds.every((serviceId) => {
-    const capability = getCapabilityForService(provider, serviceId);
-    return capability
-      ? supportsRequestedPickupTime(capability, order.pickupAt, provider.timezone, evaluatedAt)
-      : false;
-  });
-  const capacityAvailable =
-    provider.currentCapacity.status !== ProviderCapacityStatus.Offline &&
-    provider.currentCapacity.status !== ProviderCapacityStatus.Full &&
-    provider.currentCapacity.availableKg >= getOrderQuantityTotal(order);
+  const matchedServiceIds = requestedServiceIds.filter((serviceId) =>
+    Boolean(getProviderOfferingForService(provider, serviceId)),
+  );
+  const unsupportedServiceIds = requestedServiceIds.filter(
+    (serviceId) => !matchedServiceIds.includes(serviceId),
+  );
+  const sameCity = hasSameCity(order, provider);
+  const districtCovered = hasDistrictCoverage(order, provider);
+  const approvedAndActive = provider.active && provider.onboarding.status === OnboardingStatus.Approved;
+  const approvedPriceAvailable = hasApprovedActivePrice(provider, requestedServiceIds);
+  const slaCompatibility = getSlaCompatibility(order, provider);
+  const withinActiveLoadThreshold = isWithinActiveLoadThreshold(provider);
   const blockingReasonsAr = resolveEligibilityReasonLabels(reasonCodes);
 
   return {
@@ -181,10 +213,14 @@ const buildCapabilityMatch = (
     matchedServiceIds,
     unsupportedServiceIds,
     sameCity,
-    serviceAreaCovered,
-    supportsRequestedQuantities,
-    supportsRequestedPickupTime: supportsPickupTime,
-    capacityAvailable,
+    districtCovered,
+    approvedAndActive,
+    hasApprovedActivePrice: approvedPriceAvailable,
+    slaCompatible: slaCompatibility.compatible,
+    withinActiveLoadThreshold,
+    activeLoadRatio: roundScore(getActiveLoadRatio(provider), 4),
+    currentActiveOrders: provider.operationalLoad.currentActiveOrders,
+    maxActiveOrders: provider.operationalLoad.maxActiveOrders,
     isMatch: reasonCodes.length === 0,
     reasonsAr: blockingReasonsAr.length > 0 ? blockingReasonsAr : ["مطابقة كاملة لشروط الإسناد"],
   };
@@ -196,36 +232,14 @@ export const evaluateProviderEligibility = (
   options: Pick<MatchingEngineOptions, "evaluatedAt"> = {},
 ): EligibilityResult => {
   const evaluatedAt = options.evaluatedAt ?? new Date().toISOString();
-  const hotelCity = normalizeText(order.hotelSnapshot.city);
   const requestedServiceIds = getRequestedServiceIds(order);
-  const requestedQuantities = getRequestedServiceQuantities(order);
-  const sameCity = normalizeText(provider.address.city) === hotelCity;
-  const serviceAreaCovered = hasServiceAreaCoverage(provider, requestedServiceIds, hotelCity);
-  const hasUnsupportedService = requestedServiceIds.some((serviceId) => !getCapabilityForService(provider, serviceId));
-  const quantitiesSupported =
-    hasUnsupportedService ||
-    requestedServiceIds.every((serviceId) => {
-      const capability = getCapabilityForService(provider, serviceId);
-      const requestedQuantity = requestedQuantities[serviceId] ?? 0;
-
-      if (!capability) {
-        return false;
-      }
-
-      return requestedQuantity <= capability.maxSingleOrderKg && requestedQuantity <= capability.maxDailyKg;
-    });
-  const pickupTimeSupported =
-    hasUnsupportedService ||
-    requestedServiceIds.every((serviceId) => {
-      const capability = getCapabilityForService(provider, serviceId);
-      return capability
-        ? supportsRequestedPickupTime(capability, order.pickupAt, provider.timezone, evaluatedAt)
-        : false;
-    });
-  const hasAvailableCapacity =
-    provider.currentCapacity.status !== ProviderCapacityStatus.Offline &&
-    provider.currentCapacity.status !== ProviderCapacityStatus.Full &&
-    provider.currentCapacity.availableKg >= getOrderQuantityTotal(order);
+  const sameCity = hasSameCity(order, provider);
+  const districtCovered = hasDistrictCoverage(order, provider);
+  const approvedAndActive = provider.active && provider.onboarding.status === OnboardingStatus.Approved;
+  const serviceSupported = hasServiceCapability(provider, requestedServiceIds);
+  const approvedPriceAvailable = hasApprovedActivePrice(provider, requestedServiceIds);
+  const slaCompatibility = getSlaCompatibility(order, provider);
+  const withinActiveLoadThreshold = isWithinActiveLoadThreshold(provider);
   const reasonCodes: EligibilityReasonCode[] = [];
 
   if (!provider.active) {
@@ -236,24 +250,28 @@ export const evaluateProviderEligibility = (
     reasonCodes.push(EligibilityReasonCode.ProviderNotApproved);
   }
 
-  if (!sameCity || !serviceAreaCovered) {
+  if (!sameCity) {
     reasonCodes.push(EligibilityReasonCode.CityMismatch);
   }
 
-  if (hasUnsupportedService) {
+  if (sameCity && !districtCovered) {
+    reasonCodes.push(EligibilityReasonCode.DistrictNotCovered);
+  }
+
+  if (!serviceSupported) {
     reasonCodes.push(EligibilityReasonCode.ServiceUnsupported);
   }
 
-  if (!hasUnsupportedService && !quantitiesSupported) {
-    reasonCodes.push(EligibilityReasonCode.QuantityUnsupported);
+  if (serviceSupported && !approvedPriceAvailable) {
+    reasonCodes.push(EligibilityReasonCode.PriceNotApproved);
   }
 
-  if (!hasUnsupportedService && !pickupTimeSupported) {
-    reasonCodes.push(EligibilityReasonCode.PickupTimeUnsupported);
+  if (!slaCompatibility.compatible) {
+    reasonCodes.push(EligibilityReasonCode.SlaIncompatible);
   }
 
-  if (!hasAvailableCapacity) {
-    reasonCodes.push(EligibilityReasonCode.CapacityUnavailable);
+  if (!withinActiveLoadThreshold) {
+    reasonCodes.push(EligibilityReasonCode.ProviderOverloaded);
   }
 
   return {
@@ -262,41 +280,30 @@ export const evaluateProviderEligibility = (
     eligible: reasonCodes.length === 0,
     reasonCodes,
     blockingReasonsAr: resolveEligibilityReasonLabels(reasonCodes),
-    capabilityMatch: buildCapabilityMatch(provider, order, evaluatedAt, reasonCodes),
-    availableCapacityKg: provider.currentCapacity.availableKg,
+    capabilityMatch: buildCapabilityMatch(provider, order, reasonCodes),
+    currentActiveOrders: provider.operationalLoad.currentActiveOrders,
+    maxActiveOrders: provider.operationalLoad.maxActiveOrders,
+    activeLoadRatio: roundScore(getActiveLoadRatio(provider), 4),
     evaluatedAt,
   };
 };
 
-const estimateProviderPrice = (order: Order, provider: Provider) => {
-  return roundScore(
+const estimateProviderPrice = (order: Order, provider: Provider) =>
+  roundScore(
     order.items.reduce((total, item) => {
-      const capability = getCapabilityForService(provider, item.serviceId);
-      return total + item.quantity * (capability?.unitPriceSar ?? item.unitPriceSar);
+      const offering = getApprovedActiveOfferingForService(provider, item.serviceId);
+      return total + item.quantity * (offering?.currentApprovedPriceSar ?? item.unitPriceSar);
     }, 0),
   );
-};
 
-const estimateProviderTurnaroundHours = (order: Order, provider: Provider) => {
-  const turnaroundHours = order.items.map((item) => {
-    const capability = getCapabilityForService(provider, item.serviceId);
-    return capability?.defaultTurnaroundHours ?? 0;
-  });
+const estimateProviderTurnaroundHours = (provider: Provider) =>
+  provider.slaProfile.pickupLeadTimeHours +
+  provider.slaProfile.processingHours +
+  provider.slaProfile.deliveryWindowHours;
 
-  return Math.max(...turnaroundHours, 0);
-};
-
-const getCapacityAvailabilityRatio = (provider: Provider) => {
-  if (provider.currentCapacity.totalKg <= 0) {
-    return 0;
-  }
-
-  return Math.min(provider.currentCapacity.availableKg / provider.currentCapacity.totalKg, 1);
-};
-
-const getOnTimePerformanceRate = (provider: Provider) => {
-  return (provider.performance.onTimePickupRate + provider.performance.onTimeDeliveryRate) / 2;
-};
+const getSlaComplianceRate = (provider: Provider) =>
+  provider.performance.slaCompliance?.slaComplianceRate ??
+  (provider.performance.onTimePickupRate + provider.performance.onTimeDeliveryRate) / 2;
 
 const buildScoreBreakdown = (
   candidate: EligibleProviderScoringInput,
@@ -304,18 +311,27 @@ const buildScoreBreakdown = (
   ranges: {
     price: ReturnType<typeof buildNumericRange>;
     turnaround: ReturnType<typeof buildNumericRange>;
+    distance: ReturnType<typeof buildNumericRange>;
+    activeLoad: ReturnType<typeof buildNumericRange>;
   },
 ): ScoreBreakdown => {
   const priceScore = toPercentageScore(normalizeLowerIsBetter(candidate.estimatedPriceSar, ranges.price));
-  const slaSpeedScore = toPercentageScore(normalizeLowerIsBetter(candidate.estimatedTurnaroundHours, ranges.turnaround));
+  const slaSpeedScore = toPercentageScore(
+    normalizeLowerIsBetter(candidate.estimatedTurnaroundHours, ranges.turnaround),
+  );
+  const slaComplianceScore = toPercentageScore(
+    normalizeHigherIsBetter(candidate.slaComplianceRate, RATE_RANGE),
+  );
   const ratingScore = toPercentageScore(normalizeHigherIsBetter(candidate.ratingValue, RATING_RANGE));
-  const capacityScore = toPercentageScore(normalizeHigherIsBetter(candidate.capacityAvailabilityRatio, RATE_RANGE));
-  const onTimeScore = toPercentageScore(normalizeHigherIsBetter(candidate.onTimePerformanceRate, RATE_RANGE));
+  const proximityScore = toPercentageScore(normalizeLowerIsBetter(candidate.distanceKm, ranges.distance));
+  const activeLoadScore = toPercentageScore(
+    normalizeLowerIsBetter(candidate.activeLoadRatio, ranges.activeLoad),
+  );
 
   const entries: ScoreBreakdownEntry[] = [
     {
       criterion: MatchingCriterion.Price,
-      labelAr: "درجة السعر",
+      labelAr: "السعر",
       weight: weights.price,
       rawScore: priceScore,
       weightedScore: roundScore(priceScore * weights.price),
@@ -327,31 +343,39 @@ const buildScoreBreakdown = (
       weight: weights.slaSpeed,
       rawScore: slaSpeedScore,
       weightedScore: roundScore(slaSpeedScore * weights.slaSpeed),
-      explanationAr: `زمن التنفيذ التقديري ${candidate.estimatedTurnaroundHours} ساعة`,
+      explanationAr: `الزمن التشغيلي المتوقع ${candidate.estimatedTurnaroundHours} ساعة`,
+    },
+    {
+      criterion: MatchingCriterion.SlaComplianceHistory,
+      labelAr: "سجل الالتزام بالـ SLA",
+      weight: weights.slaComplianceHistory,
+      rawScore: slaComplianceScore,
+      weightedScore: roundScore(slaComplianceScore * weights.slaComplianceHistory),
+      explanationAr: `معدل الالتزام التاريخي ${roundScore(candidate.slaComplianceRate * 100)}%`,
     },
     {
       criterion: MatchingCriterion.Rating,
-      labelAr: "تقييم المزوّد",
+      labelAr: "تقييم المزود",
       weight: weights.rating,
       rawScore: ratingScore,
       weightedScore: roundScore(ratingScore * weights.rating),
       explanationAr: `التقييم الحالي ${roundScore(candidate.ratingValue, 1)} من 5`,
     },
     {
-      criterion: MatchingCriterion.CapacityAvailability,
-      labelAr: "توفر السعة",
-      weight: weights.capacityAvailability,
-      rawScore: capacityScore,
-      weightedScore: roundScore(capacityScore * weights.capacityAvailability),
-      explanationAr: `السعة المتاحة ${candidate.eligibilityResult.availableCapacityKg} كجم`,
+      criterion: MatchingCriterion.GeographicProximity,
+      labelAr: "القرب الجغرافي",
+      weight: weights.geographicProximity,
+      rawScore: proximityScore,
+      weightedScore: roundScore(proximityScore * weights.geographicProximity),
+      explanationAr: `المسافة التقديرية ${roundScore(candidate.distanceKm, 1)} كم`,
     },
     {
-      criterion: MatchingCriterion.OnTimePerformance,
-      labelAr: "الالتزام بالمواعيد",
-      weight: weights.onTimePerformance,
-      rawScore: onTimeScore,
-      weightedScore: roundScore(onTimeScore * weights.onTimePerformance),
-      explanationAr: `معدل الالتزام ${roundScore(candidate.onTimePerformanceRate * 100)}%`,
+      criterion: MatchingCriterion.ActiveLoad,
+      labelAr: "الحمل التشغيلي النشط",
+      weight: weights.activeLoad,
+      rawScore: activeLoadScore,
+      weightedScore: roundScore(activeLoadScore * weights.activeLoad),
+      explanationAr: `الحمل الحالي ${candidate.eligibilityResult.currentActiveOrders}/${candidate.eligibilityResult.maxActiveOrders}`,
     },
   ];
 
@@ -361,29 +385,30 @@ const buildScoreBreakdown = (
   };
 };
 
-const buildEligibleProviderScoringInput = (order: Order, provider: Provider, eligibilityResult: EligibilityResult): EligibleProviderScoringInput => {
-  return {
-    provider,
-    eligibilityResult,
-    estimatedPriceSar: estimateProviderPrice(order, provider),
-    estimatedTurnaroundHours: estimateProviderTurnaroundHours(order, provider),
-    capacityAvailabilityRatio: getCapacityAvailabilityRatio(provider),
-    onTimePerformanceRate: getOnTimePerformanceRate(provider),
-    ratingValue: provider.performance.rating,
-  };
-};
+const buildEligibleProviderScoringInput = (
+  order: Order,
+  provider: Provider,
+  eligibilityResult: EligibilityResult,
+): EligibleProviderScoringInput => ({
+  provider,
+  eligibilityResult,
+  estimatedPriceSar: estimateProviderPrice(order, provider),
+  estimatedTurnaroundHours: estimateProviderTurnaroundHours(provider),
+  distanceKm: getGeographicDistanceKm(order, provider),
+  activeLoadRatio: getActiveLoadRatio(provider),
+  slaComplianceRate: getSlaComplianceRate(provider),
+  ratingValue: provider.performance.rating,
+});
 
 export const createMatchingRunId = (orderId: string, evaluatedAt: string) => {
   const normalizedTimestamp = evaluatedAt.replace(/[^0-9]/g, "").slice(0, 14);
   return `match-${orderId}-${normalizedTimestamp}`;
 };
 
-const resolveScoreWeights = (weights?: Partial<MatchingScoreWeights>): MatchingScoreWeights => {
-  return {
-    ...DEFAULT_MATCHING_SCORE_WEIGHTS,
-    ...weights,
-  };
-};
+const resolveScoreWeights = (weights?: Partial<MatchingScoreWeights>): MatchingScoreWeights => ({
+  ...DEFAULT_MATCHING_SCORE_WEIGHTS,
+  ...weights,
+});
 
 const buildMatchingLog = (
   order: Order,
@@ -412,9 +437,9 @@ const buildMatchingLog = (
     evaluatedAt: eligibilityResult.evaluatedAt,
     notesAr:
       decision === MatchingDecision.Selected
-        ? "تم اختيار هذا المزوّد كأفضل تطابق تلقائي"
+        ? "تم اختيار هذا المزود كأفضل تطابق تلقائي"
         : decision === MatchingDecision.Shortlisted
-          ? "المزوّد مؤهل لكنه لم يحصل على أعلى نتيجة"
+          ? "المزود مؤهل لكنه لم يحصل على أعلى نتيجة"
           : eligibilityResult.blockingReasonsAr.join("، "),
   };
 };
@@ -448,7 +473,11 @@ export const matchProvidersForOrder = (
 
   const ranges = {
     price: buildNumericRange(eligibleCandidates.map((candidate) => candidate.estimatedPriceSar)),
-    turnaround: buildNumericRange(eligibleCandidates.map((candidate) => candidate.estimatedTurnaroundHours)),
+    turnaround: buildNumericRange(
+      eligibleCandidates.map((candidate) => candidate.estimatedTurnaroundHours),
+    ),
+    distance: buildNumericRange(eligibleCandidates.map((candidate) => candidate.distanceKm)),
+    activeLoad: buildNumericRange(eligibleCandidates.map((candidate) => candidate.activeLoadRatio)),
   };
 
   const rankedProviders = eligibleCandidates
@@ -463,8 +492,9 @@ export const matchProvidersForOrder = (
         eligibilityResult: candidate.eligibilityResult,
         estimatedPriceSar: candidate.estimatedPriceSar,
         estimatedTurnaroundHours: candidate.estimatedTurnaroundHours,
-        capacityAvailabilityRatio: roundScore(candidate.capacityAvailabilityRatio, 4),
-        onTimePerformanceRate: roundScore(candidate.onTimePerformanceRate, 4),
+        distanceKm: roundScore(candidate.distanceKm, 3),
+        activeLoadRatio: roundScore(candidate.activeLoadRatio, 4),
+        slaComplianceRate: roundScore(candidate.slaComplianceRate, 4),
       };
     })
     .sort((left, right) => {
@@ -474,6 +504,10 @@ export const matchProvidersForOrder = (
 
       if (left.estimatedPriceSar !== right.estimatedPriceSar) {
         return left.estimatedPriceSar - right.estimatedPriceSar;
+      }
+
+      if (right.slaComplianceRate !== left.slaComplianceRate) {
+        return right.slaComplianceRate - left.slaComplianceRate;
       }
 
       if (right.provider.performance.rating !== left.provider.performance.rating) {

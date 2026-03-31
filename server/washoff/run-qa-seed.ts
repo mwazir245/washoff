@@ -1,4 +1,4 @@
-import { createQaPrismaClient, printQaCredentials, seedQaDatabase } from "./qa-environment";
+import { createQaPrismaClient, printQaCredentials, seedQaDatabase } from "./qa-environment.ts";
 
 const run = async () => {
   const prisma = createQaPrismaClient();
@@ -17,4 +17,3 @@ run().catch((error) => {
   process.stderr.write(`${message}\n`);
   process.exitCode = 1;
 });
-

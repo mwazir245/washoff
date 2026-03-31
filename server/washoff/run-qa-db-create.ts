@@ -1,4 +1,4 @@
-import { ensureQaDatabaseExists } from "./qa-environment";
+import { ensureQaDatabaseExists } from "./qa-environment.ts";
 
 try {
   const result = ensureQaDatabaseExists();
@@ -20,4 +20,3 @@ try {
   process.stderr.write(`${message}\n`);
   process.exitCode = 1;
 }
-

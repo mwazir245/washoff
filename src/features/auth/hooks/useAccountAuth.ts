@@ -1,10 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AccountRole } from "@/features/auth/model";
+import { readStoredClientSession } from "@/features/auth/infrastructure/client-auth-storage";
 import { getWashoffPlatformService } from "@/features/orders/application";
+import type { AuthSessionResult, CurrentAccountSessionResult } from "@/features/orders/application/contracts/platform-contracts";
 import { platformQueryKeys } from "@/features/orders/data/queryKeys";
 import { appRoutes } from "@/shared/config/navigation";
 
-const invalidateOperationalQueries = async (queryClient: ReturnType<typeof useQueryClient>) => {
+const invalidateOperationalQueries = async (queryClient: QueryClient) => {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: platformQueryKeys.authSession }),
     queryClient.invalidateQueries({ queryKey: platformQueryKeys.hotelDashboard }),
@@ -14,6 +16,15 @@ const invalidateOperationalQueries = async (queryClient: ReturnType<typeof useQu
     queryClient.invalidateQueries({ queryKey: platformQueryKeys.adminAccounts }),
     queryClient.invalidateQueries({ queryKey: platformQueryKeys.identityAudit }),
   ]);
+};
+
+const writeSessionToCache = (queryClient: QueryClient, session: AuthSessionResult) => {
+  const currentSession: CurrentAccountSessionResult = {
+    account: session.account,
+    session: session.session,
+  };
+
+  queryClient.setQueryData(platformQueryKeys.authSession, currentSession);
 };
 
 export const resolveAccountHomeRoute = (role: AccountRole) => {
@@ -32,6 +43,19 @@ export const useCurrentAccountSession = () => {
   return useQuery({
     queryKey: platformQueryKeys.authSession,
     queryFn: () => getWashoffPlatformService().getCurrentAccountSession(),
+    initialData: () => {
+      const storedSession = readStoredClientSession();
+
+      if (!storedSession) {
+        return null;
+      }
+
+      return {
+        account: storedSession.account,
+        session: storedSession.session,
+      } satisfies CurrentAccountSessionResult;
+    },
+    initialDataUpdatedAt: 0,
     staleTime: 60_000,
   });
 };
@@ -41,7 +65,10 @@ export const useLoginMutation = () => {
 
   return useMutation({
     mutationFn: (input: { email: string; password: string }) => getWashoffPlatformService().login(input),
-    onSuccess: async () => invalidateOperationalQueries(queryClient),
+    onSuccess: async (session) => {
+      writeSessionToCache(queryClient, session);
+      await invalidateOperationalQueries(queryClient);
+    },
   });
 };
 
@@ -51,7 +78,10 @@ export const useActivateAccountMutation = () => {
   return useMutation({
     mutationFn: (input: { token: string; password: string; fullName?: string; phone?: string }) =>
       getWashoffPlatformService().activateAccount(input),
-    onSuccess: async () => invalidateOperationalQueries(queryClient),
+    onSuccess: async (session) => {
+      writeSessionToCache(queryClient, session);
+      await invalidateOperationalQueries(queryClient);
+    },
   });
 };
 
@@ -85,7 +115,10 @@ export const useResetPasswordMutation = () => {
   return useMutation({
     mutationFn: (input: { token: string; password: string }) =>
       getWashoffPlatformService().resetPassword(input),
-    onSuccess: async () => invalidateOperationalQueries(queryClient),
+    onSuccess: async (session) => {
+      writeSessionToCache(queryClient, session);
+      await invalidateOperationalQueries(queryClient);
+    },
   });
 };
 

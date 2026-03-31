@@ -7,20 +7,28 @@ import {
   AccountStatus,
   LinkedEntityType,
   PasswordResetState,
-} from "../../src/features/auth/model";
-import { createPasswordDigest } from "../../src/features/auth/lib/credentials";
+} from "../../src/features/auth/model/index.ts";
+import { createPasswordDigest } from "../../src/features/auth/lib/credentials.ts";
 import {
+  buildDefaultPlatformServiceCatalog,
+  buildServiceCatalogItemDescription,
+  buildServiceCatalogItemName,
+  buildPlatformProductLookup,
+  buildPlatformServiceTypeLookup,
+  getDefaultRushSupportForServiceType,
+  getDefaultTurnaroundHoursForServiceType,
+  mapServiceTypeToCategory,
   OnboardingStatus,
   ProviderCapacityStatus,
   ServiceBillingUnit,
   ServiceCategory,
-} from "../../src/features/orders/model";
+} from "../../src/features/orders/model/index.ts";
 import {
   getDatabaseIsolationFingerprint,
   loadWashoffEnvironment,
   resolveWashoffEnvironment,
   selectDatabaseUrlForEnvironment,
-} from "./environment";
+} from "./environment.ts";
 
 const resolveNpxInvocation = () => ({
   command: process.execPath,
@@ -85,6 +93,46 @@ const qaSeedServices = [
     defaultTurnaroundHours: 12,
     supportsRush: false,
   },
+] as const;
+
+const qaSeedCatalog = buildDefaultPlatformServiceCatalog();
+const qaSeedProducts = qaSeedCatalog.products;
+const qaSeedProductsById = buildPlatformProductLookup(qaSeedProducts);
+const qaSeedServiceTypesById = buildPlatformServiceTypeLookup(qaSeedCatalog.serviceTypes);
+const qaSeedCatalogServices =
+  qaSeedServices.length >= 0
+    ? qaSeedCatalog.matrixRows.map((row) => {
+        const product = qaSeedProductsById.get(row.productId);
+        const serviceType = qaSeedServiceTypesById.get(row.serviceTypeId);
+
+        if (!product || !serviceType) {
+          throw new Error("تعذر تجهيز كتالوج خدمات QA.");
+        }
+
+        return {
+          id: row.id,
+          code: row.code,
+          productId: row.productId,
+          serviceType: serviceType.code,
+          pricingUnit: row.pricingUnit,
+          nameAr: buildServiceCatalogItemName(product.name.ar, serviceType.code).ar,
+          descriptionAr: buildServiceCatalogItemDescription(product.name.ar, serviceType.code).ar,
+          category: mapServiceTypeToCategory(serviceType.code),
+          billingUnit: ServiceBillingUnit.Piece,
+          defaultUnitPriceSar: row.suggestedPriceSar ?? 0,
+          defaultTurnaroundHours: getDefaultTurnaroundHoursForServiceType(serviceType.code),
+          supportsRush: getDefaultRushSupportForServiceType(serviceType.code),
+          suggestedPriceSar: row.suggestedPriceSar ?? null,
+          isAvailable: row.isAvailable,
+          active: row.active,
+          sortOrder: row.sortOrder,
+        };
+      })
+    : [];
+const qaSeedOperationalServiceIds = [
+  "svc-thobe-dry_clean",
+  "svc-shirt-iron",
+  "svc-bedsheet-wash_and_iron",
 ] as const;
 
 const createPasswordFields = async (password: string) => {
@@ -207,6 +255,7 @@ const appTableNames = [
   "provider_capacity",
   "provider_capabilities",
   "providers",
+  "platform_products",
   "services",
   "hotels",
   "identity_audit_events",
@@ -228,7 +277,33 @@ export const seedQaDatabase = async (prisma: PrismaClient) => {
   const providerPassword = await createPasswordFields(QA_CREDENTIALS.provider.password);
 
   await prisma.$transaction(async (tx) => {
-    for (const service of qaSeedServices) {
+    for (const product of qaSeedProducts) {
+      await tx.platformProduct.upsert({
+        where: {
+          id: product.id,
+        },
+        create: {
+          id: product.id,
+          code: product.code,
+          nameAr: product.name.ar,
+          nameEn: product.name.en,
+          active: product.active,
+          sortOrder: product.sortOrder,
+          createdAt: new Date(timestamp),
+          updatedAt: new Date(timestamp),
+        },
+        update: {
+          code: product.code,
+          nameAr: product.name.ar,
+          nameEn: product.name.en,
+          active: product.active,
+          sortOrder: product.sortOrder,
+          updatedAt: new Date(timestamp),
+        },
+      });
+    }
+
+    for (const service of qaSeedCatalogServices) {
       await tx.service.upsert({
         where: {
           id: service.id,
@@ -243,7 +318,15 @@ export const seedQaDatabase = async (prisma: PrismaClient) => {
           defaultUnitPriceSar: service.defaultUnitPriceSar,
           defaultTurnaroundHours: service.defaultTurnaroundHours,
           supportsRush: service.supportsRush,
-          active: true,
+          active: service.active,
+          productId: service.productId,
+          serviceType: service.serviceType,
+          pricingUnit: service.pricingUnit,
+          suggestedPriceSar: service.suggestedPriceSar,
+          isAvailable: service.isAvailable,
+          sortOrder: service.sortOrder,
+          createdAt: new Date(timestamp),
+          updatedAt: new Date(timestamp),
         },
         update: {
           code: service.code,
@@ -254,7 +337,14 @@ export const seedQaDatabase = async (prisma: PrismaClient) => {
           defaultUnitPriceSar: service.defaultUnitPriceSar,
           defaultTurnaroundHours: service.defaultTurnaroundHours,
           supportsRush: service.supportsRush,
-          active: true,
+          active: service.active,
+          productId: service.productId,
+          serviceType: service.serviceType,
+          pricingUnit: service.pricingUnit,
+          suggestedPriceSar: service.suggestedPriceSar,
+          isAvailable: service.isAvailable,
+          sortOrder: service.sortOrder,
+          updatedAt: new Date(timestamp),
         },
       });
     }
@@ -271,7 +361,7 @@ export const seedQaDatabase = async (prisma: PrismaClient) => {
         contactName: "منسق اختبار الفندق",
         contactPhone: "0501112222",
         contactEmail: QA_CREDENTIALS.hotel.email,
-        contractedServiceIdsJson: ["wash_fold", "iron"],
+        contractedServiceIdsJson: [...qaSeedOperationalServiceIds],
         active: true,
         notesAr: "فندق مخصص لاختبارات QA اليدوية.",
         onboardingStatus: OnboardingStatus.Approved,
@@ -290,7 +380,7 @@ export const seedQaDatabase = async (prisma: PrismaClient) => {
         contactName: "منسق اختبار الفندق",
         contactPhone: "0501112222",
         contactEmail: QA_CREDENTIALS.hotel.email,
-        contractedServiceIdsJson: ["wash_fold", "iron"],
+        contractedServiceIdsJson: [...qaSeedOperationalServiceIds],
         active: true,
         notesAr: "فندق مخصص لاختبارات QA اليدوية.",
         onboardingStatus: OnboardingStatus.Approved,
@@ -349,7 +439,9 @@ export const seedQaDatabase = async (prisma: PrismaClient) => {
       },
     });
 
-    for (const service of qaSeedServices) {
+    for (const service of qaSeedCatalogServices.filter((entry) =>
+      qaSeedOperationalServiceIds.includes(entry.id as (typeof qaSeedOperationalServiceIds)[number]),
+    )) {
       await tx.providerCapability.upsert({
         where: {
           providerId_serviceId: {
@@ -371,6 +463,15 @@ export const seedQaDatabase = async (prisma: PrismaClient) => {
           minimumPickupLeadHours: 2,
           pickupWindowStartHour: 8,
           pickupWindowEndHour: 22,
+          currentApprovedPriceSar: service.defaultUnitPriceSar,
+          currentStatus: "active",
+          activeMatrix: service.active,
+          availableMatrix: service.isAvailable,
+          approvedAt: new Date(timestamp),
+          approvedByAccountId: QA_IDS.adminAccount,
+          approvedByRole: "admin",
+          createdAt: new Date(timestamp),
+          updatedAt: new Date(timestamp),
         },
         update: {
           serviceNameAr: service.nameAr,
@@ -384,6 +485,18 @@ export const seedQaDatabase = async (prisma: PrismaClient) => {
           minimumPickupLeadHours: 2,
           pickupWindowStartHour: 8,
           pickupWindowEndHour: 22,
+          currentApprovedPriceSar: service.defaultUnitPriceSar,
+          currentStatus: "active",
+          proposedPriceSar: null,
+          proposedStatus: null,
+          proposedSubmittedAt: null,
+          rejectionReasonAr: null,
+          activeMatrix: service.active,
+          availableMatrix: service.isAvailable,
+          approvedAt: new Date(timestamp),
+          approvedByAccountId: QA_IDS.adminAccount,
+          approvedByRole: "admin",
+          updatedAt: new Date(timestamp),
         },
       });
     }

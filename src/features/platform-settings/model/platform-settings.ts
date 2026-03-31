@@ -4,6 +4,10 @@ export interface PlatformSettings {
   siteNameEn: string;
   siteTaglineAr: string;
   siteTaglineEn: string;
+  sellerLegalNameAr: string;
+  sellerVatNumber: string;
+  sellerAddressAr: string;
+  sellerCityAr: string;
   mailFromNameAr: string;
   mailFromEmail: string;
   supportEmail?: string;
@@ -22,6 +26,10 @@ export interface PlatformSettingsUpdateCommand {
   siteNameEn: string;
   siteTaglineAr: string;
   siteTaglineEn: string;
+  sellerLegalNameAr: string;
+  sellerVatNumber: string;
+  sellerAddressAr: string;
+  sellerCityAr: string;
   mailFromNameAr: string;
   mailFromEmail: string;
   supportEmail?: string;
@@ -66,6 +74,10 @@ export const defaultPlatformSettings: PlatformSettings = {
   siteNameEn: "WashOff Platform",
   siteTaglineAr: "منصة تشغيل ذكية لعمليات الغسيل",
   siteTaglineEn: "Smart laundry operations platform",
+  sellerLegalNameAr: "مؤسسة واش أوف لتشغيل خدمات الغسيل",
+  sellerVatNumber: "300000000000003",
+  sellerAddressAr: "الرياض، المملكة العربية السعودية",
+  sellerCityAr: "الرياض",
   mailFromNameAr: "منصة واش أوف",
   mailFromEmail: "washoff@outlook.sa",
   supportEmail: "washoff@outlook.sa",

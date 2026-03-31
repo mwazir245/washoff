@@ -3,12 +3,12 @@ import type { PrismaClient } from "@prisma/client";
 import {
   exportMockOrdersRepositoryPersistenceSnapshot,
   resetMockOrdersRepository,
-} from "../../src/features/orders/data/mock-orders.repository";
+} from "../../src/features/orders/data/mock-orders.repository.ts";
 import type {
   PlatformPersistenceSnapshot,
   ProviderAggregateRecordSet,
   OrderAggregateRecordSet,
-} from "../../src/features/orders/infrastructure/persistence/persistence-records";
+} from "../../src/features/orders/infrastructure/persistence/persistence-records.ts";
 
 type PrismaExecutor = PrismaClient | Prisma.TransactionClient;
 
@@ -69,6 +69,7 @@ const flattenProviderRecords = (providers: ProviderAggregateRecordSet[]) => ({
     displayNameEn: aggregate.provider.display_name_en,
     legalNameAr: aggregate.provider.legal_name_ar,
     legalNameEn: aggregate.provider.legal_name_en,
+    legalEntityName: aggregate.provider.legal_entity_name,
     countryCode: aggregate.provider.country_code,
     city: aggregate.provider.city,
     district: aggregate.provider.district,
@@ -80,6 +81,29 @@ const flattenProviderRecords = (providers: ProviderAggregateRecordSet[]) => ({
     contactName: aggregate.provider.contact_name,
     contactPhone: aggregate.provider.contact_phone,
     contactEmail: aggregate.provider.contact_email,
+    businessPhone: aggregate.provider.business_phone,
+    businessEmail: aggregate.provider.business_email,
+    addressText: aggregate.provider.address_text,
+    taxRegistrationNumber: aggregate.provider.tax_registration_number,
+    commercialRegistrationNumber: aggregate.provider.commercial_registration_number,
+    commercialRegistrationFileJson: aggregate.provider.commercial_registration_file_json
+      ? parseJsonString(aggregate.provider.commercial_registration_file_json)
+      : null,
+    otherServicesText: aggregate.provider.other_services_text,
+    pickupLeadTimeHours: aggregate.provider.pickup_lead_time_hours,
+    executionTimeHours: aggregate.provider.execution_time_hours,
+    deliveryTimeHours: aggregate.provider.delivery_time_hours,
+    workingDaysJson: aggregate.provider.working_days_json
+      ? parseJsonString(aggregate.provider.working_days_json)
+      : null,
+    workingHoursFrom: aggregate.provider.working_hours_from,
+    workingHoursTo: aggregate.provider.working_hours_to,
+    bankName: aggregate.provider.bank_name,
+    iban: aggregate.provider.iban,
+    bankAccountHolderName: aggregate.provider.bank_account_holder_name,
+    accountSetupName: aggregate.provider.account_setup_name,
+    accountSetupPhone: aggregate.provider.account_setup_phone,
+    accountSetupEmail: aggregate.provider.account_setup_email,
     serviceAreaCitiesJson: parseJsonString(aggregate.provider.service_area_cities_json),
     active: aggregate.provider.active,
     notesAr: aggregate.provider.notes_ar,
@@ -108,6 +132,21 @@ const flattenProviderRecords = (providers: ProviderAggregateRecordSet[]) => ({
       minimumPickupLeadHours: capability.minimum_pickup_lead_hours,
       pickupWindowStartHour: capability.pickup_window_start_hour,
       pickupWindowEndHour: capability.pickup_window_end_hour,
+      currentApprovedPriceSar: createDecimal(capability.current_approved_price_sar),
+      currentStatus: capability.current_status ?? (capability.active ? "active" : "inactive"),
+      proposedPriceSar: createDecimal(capability.proposed_price_sar),
+      proposedStatus: capability.proposed_status,
+      proposedSubmittedAt: capability.proposed_submitted_at
+        ? new Date(capability.proposed_submitted_at)
+        : null,
+      approvedAt: capability.approved_at ? new Date(capability.approved_at) : null,
+      approvedByAccountId: capability.approved_by_account_id,
+      approvedByRole: capability.approved_by_role,
+      rejectionReasonAr: capability.rejection_reason_ar,
+      activeMatrix: capability.active_matrix ?? true,
+      availableMatrix: capability.available_matrix ?? true,
+      createdAt: capability.created_at ? new Date(capability.created_at) : new Date(),
+      updatedAt: capability.updated_at ? new Date(capability.updated_at) : new Date(),
     })),
   ),
   capacityRows: providers.map((aggregate) => ({
@@ -142,6 +181,7 @@ const flattenOrderRecords = (orders: OrderAggregateRecordSet[]) => ({
   orderRows: orders.map((aggregate) => ({
     id: aggregate.order.id,
     hotelId: aggregate.order.hotel_id,
+    roomNumber: aggregate.order.room_number,
     providerId: aggregate.order.provider_id,
     hotelSnapshotJson: parseJsonString(aggregate.order.hotel_snapshot_json),
     providerSnapshotJson: aggregate.order.provider_snapshot_json
@@ -158,6 +198,16 @@ const flattenOrderRecords = (orders: OrderAggregateRecordSet[]) => ({
     totalItemCount: createDecimal(aggregate.order.total_item_count),
     pickupAt: new Date(aggregate.order.pickup_at),
     notesAr: aggregate.order.notes_ar,
+    hotelFinancialSnapshotJson: aggregate.order.hotel_financial_snapshot_json
+      ? parseJsonString(aggregate.order.hotel_financial_snapshot_json)
+      : null,
+    providerFinancialSnapshotJson: aggregate.order.provider_financial_snapshot_json
+      ? parseJsonString(aggregate.order.provider_financial_snapshot_json)
+      : null,
+    hotelInvoiceId: aggregate.order.hotel_invoice_id,
+    providerStatementId: aggregate.order.provider_statement_id,
+    billedAt: aggregate.order.billed_at ? new Date(aggregate.order.billed_at) : null,
+    settledAt: aggregate.order.settled_at ? new Date(aggregate.order.settled_at) : null,
     statusUpdatedAt: new Date(aggregate.order.status_updated_at),
     progressPercent: createDecimal(aggregate.order.progress_percent),
     activeAssignmentId: aggregate.order.active_assignment_id,
@@ -278,6 +328,70 @@ const flattenOrderRecords = (orders: OrderAggregateRecordSet[]) => ({
   ),
 });
 
+const flattenHotelInvoiceRecords = (snapshot: PlatformPersistenceSnapshot) => ({
+  hotelInvoiceRows: snapshot.hotel_invoices.map((invoice) => ({
+    id: invoice.id,
+    invoiceNumber: invoice.invoice_number,
+    hotelId: invoice.hotel_id,
+    invoiceDate: invoice.invoice_date,
+    currencyCode: invoice.currency_code,
+    status: invoice.status,
+    orderCount: invoice.order_count,
+    subtotalExVatSar: createDecimal(invoice.subtotal_ex_vat_sar),
+    vatAmountSar: createDecimal(invoice.vat_amount_sar),
+    totalIncVatSar: createDecimal(invoice.total_inc_vat_sar),
+    sellerJson: parseJsonString(invoice.seller_json),
+    buyerJson: parseJsonString(invoice.buyer_json),
+    createdAt: new Date(invoice.created_at),
+    updatedAt: new Date(invoice.updated_at),
+    issuedAt: new Date(invoice.issued_at),
+    collectedAt: invoice.collected_at ? new Date(invoice.collected_at) : null,
+    collectedByAccountId: invoice.collected_by_account_id,
+    collectedByRole: invoice.collected_by_role,
+    pdfObjectId: invoice.pdf_object_id,
+  })),
+  hotelInvoiceLineRows: snapshot.hotel_invoice_order_lines.map((line) => ({
+    id: line.id,
+    invoiceId: line.invoice_id,
+    orderId: line.order_id,
+    roomNumber: line.room_number,
+    orderSubtotalExVatSar: createDecimal(line.order_subtotal_ex_vat_sar),
+    orderVatAmountSar: createDecimal(line.order_vat_amount_sar),
+    orderTotalIncVatSar: createDecimal(line.order_total_inc_vat_sar),
+  })),
+});
+
+const flattenProviderStatementRecords = (snapshot: PlatformPersistenceSnapshot) => ({
+  providerStatementRows: snapshot.provider_statements.map((statement) => ({
+    id: statement.id,
+    statementNumber: statement.statement_number,
+    providerId: statement.provider_id,
+    statementDate: statement.statement_date,
+    currencyCode: statement.currency_code,
+    status: statement.status,
+    orderCount: statement.order_count,
+    subtotalExVatSar: createDecimal(statement.subtotal_ex_vat_sar),
+    vatAmountSar: createDecimal(statement.vat_amount_sar),
+    totalIncVatSar: createDecimal(statement.total_inc_vat_sar),
+    providerJson: parseJsonString(statement.provider_json),
+    createdAt: new Date(statement.created_at),
+    updatedAt: new Date(statement.updated_at),
+    paidAt: statement.paid_at ? new Date(statement.paid_at) : null,
+    paidByAccountId: statement.paid_by_account_id,
+    paidByRole: statement.paid_by_role,
+    pdfObjectId: statement.pdf_object_id,
+  })),
+  providerStatementLineRows: snapshot.provider_statement_order_lines.map((line) => ({
+    id: line.id,
+    statementId: line.statement_id,
+    orderId: line.order_id,
+    roomNumber: line.room_number,
+    providerSubtotalExVatSar: createDecimal(line.provider_subtotal_ex_vat_sar),
+    providerVatAmountSar: createDecimal(line.provider_vat_amount_sar),
+    providerTotalIncVatSar: createDecimal(line.provider_total_inc_vat_sar),
+  })),
+});
+
 export const createPrismaPlatformPersistenceStore = (
   prisma: PrismaClient,
 ): PrismaPlatformPersistenceStore => {
@@ -291,7 +405,9 @@ export const createPrismaPlatformPersistenceStore = (
       platformContentEntries,
       platformContentAudit,
       hotels,
+      platformProducts,
       services,
+      hotelContractPrices,
       providers,
       providerCapabilities,
       providerCapacities,
@@ -305,6 +421,13 @@ export const createPrismaPlatformPersistenceStore = (
       slaHistory,
       settlements,
       settlementLineItems,
+      hotelInvoices,
+      hotelInvoiceOrderLines,
+      providerStatements,
+      providerStatementOrderLines,
+      storedObjects,
+      financeAuditEvents,
+      backgroundJobs,
       notifications,
     ] = await Promise.all([
       executor.account.findMany({ orderBy: { createdAt: "asc" } }),
@@ -315,7 +438,9 @@ export const createPrismaPlatformPersistenceStore = (
       executor.platformContentEntry.findMany({ orderBy: [{ pageKey: "asc" }, { sortOrder: "asc" }] }),
       executor.platformContentAudit.findMany({ orderBy: { changedAt: "desc" } }),
       executor.hotel.findMany({ orderBy: { code: "asc" } }),
+      executor.platformProduct.findMany({ orderBy: { sortOrder: "asc" } }),
       executor.service.findMany({ orderBy: { code: "asc" } }),
+      executor.hotelContractPrice.findMany({ orderBy: [{ hotelId: "asc" }, { serviceId: "asc" }] }),
       executor.provider.findMany({ orderBy: { code: "asc" } }),
       executor.providerCapability.findMany({ orderBy: [{ providerId: "asc" }, { serviceId: "asc" }] }),
       executor.providerCapacity.findMany({ orderBy: [{ providerId: "asc" }, { capacityDate: "asc" }] }),
@@ -329,6 +454,13 @@ export const createPrismaPlatformPersistenceStore = (
       executor.sLAHistory.findMany({ orderBy: { recordedAt: "asc" } }),
       executor.settlement.findMany({ orderBy: { generatedAt: "asc" } }),
       executor.settlementLineItem.findMany({ orderBy: { id: "asc" } }),
+      executor.hotelInvoice.findMany({ orderBy: { issuedAt: "asc" } }),
+      executor.hotelInvoiceOrderLine.findMany({ orderBy: { id: "asc" } }),
+      executor.providerStatement.findMany({ orderBy: { createdAt: "asc" } }),
+      executor.providerStatementOrderLine.findMany({ orderBy: { id: "asc" } }),
+      executor.storedObject.findMany({ orderBy: { createdAt: "asc" } }),
+      executor.financeAuditEvent.findMany({ orderBy: { occurredAt: "asc" } }),
+      executor.backgroundJob.findMany({ orderBy: { createdAt: "asc" } }),
       executor.notification.findMany({ orderBy: { createdAt: "asc" } }),
     ]);
 
@@ -343,6 +475,8 @@ export const createPrismaPlatformPersistenceStore = (
     const slaHistoryByOrderId = new Map<string, typeof slaHistory>();
     const settlementsByOrderId = new Map<string, typeof settlements>();
     const settlementLineItemsBySettlementId = new Map<string, typeof settlementLineItems>();
+    const hotelInvoiceLinesByInvoiceId = new Map<string, typeof hotelInvoiceOrderLines>();
+    const providerStatementLinesByStatementId = new Map<string, typeof providerStatementOrderLines>();
 
     providerCapabilities.forEach((capability) => {
       const list = capabilitiesByProviderId.get(capability.providerId) ?? [];
@@ -394,6 +528,16 @@ export const createPrismaPlatformPersistenceStore = (
       const list = settlementLineItemsBySettlementId.get(lineItem.settlementId) ?? [];
       list.push(lineItem);
       settlementLineItemsBySettlementId.set(lineItem.settlementId, list);
+    });
+    hotelInvoiceOrderLines.forEach((line) => {
+      const list = hotelInvoiceLinesByInvoiceId.get(line.invoiceId) ?? [];
+      list.push(line);
+      hotelInvoiceLinesByInvoiceId.set(line.invoiceId, list);
+    });
+    providerStatementOrderLines.forEach((line) => {
+      const list = providerStatementLinesByStatementId.get(line.statementId) ?? [];
+      list.push(line);
+      providerStatementLinesByStatementId.set(line.statementId, list);
     });
 
     return {
@@ -469,6 +613,10 @@ export const createPrismaPlatformPersistenceStore = (
         site_name_en: entry.siteNameEn,
         site_tagline_ar: entry.siteTaglineAr,
         site_tagline_en: entry.siteTaglineEn,
+        seller_legal_name_ar: entry.sellerLegalNameAr,
+        seller_vat_number: entry.sellerVatNumber,
+        seller_address_ar: entry.sellerAddressAr,
+        seller_city_ar: entry.sellerCityAr,
         mail_from_name_ar: entry.mailFromNameAr,
         mail_from_email: entry.mailFromEmail,
         support_email: entry.supportEmail ?? undefined,
@@ -569,6 +717,16 @@ export const createPrismaPlatformPersistenceStore = (
         created_at: hotel.createdAt.toISOString(),
         updated_at: hotel.updatedAt.toISOString(),
       })),
+      platform_products: platformProducts.map((product) => ({
+        id: product.id,
+        code: product.code,
+        name_ar: product.nameAr,
+        name_en: product.nameEn ?? undefined,
+        active: product.active,
+        sort_order: product.sortOrder,
+        created_at: product.createdAt.toISOString(),
+        updated_at: product.updatedAt.toISOString(),
+      })),
       services: services.map((service) => ({
         id: service.id,
         code: service.code,
@@ -582,6 +740,22 @@ export const createPrismaPlatformPersistenceStore = (
         default_turnaround_hours: service.defaultTurnaroundHours,
         supports_rush: service.supportsRush,
         active: service.active,
+        product_id: service.productId ?? undefined,
+        service_type: service.serviceType ?? undefined,
+        pricing_unit: service.pricingUnit ?? undefined,
+        suggested_price_sar: toNumber(service.suggestedPriceSar),
+        is_available: service.isAvailable,
+        sort_order: service.sortOrder,
+        created_at: service.createdAt.toISOString(),
+        updated_at: service.updatedAt.toISOString(),
+      })),
+      hotel_contract_prices: hotelContractPrices.map((entry) => ({
+        hotel_id: entry.hotelId,
+        service_id: entry.serviceId,
+        unit_price_sar: toNumber(entry.unitPriceSar) ?? 0,
+        active: entry.active,
+        created_at: entry.createdAt.toISOString(),
+        updated_at: entry.updatedAt.toISOString(),
       })),
       providers: providers.map<ProviderAggregateRecordSet>((provider) => ({
         provider: {
@@ -591,6 +765,7 @@ export const createPrismaPlatformPersistenceStore = (
           legal_name_en: provider.legalNameEn ?? undefined,
           display_name_ar: provider.displayNameAr,
           display_name_en: provider.displayNameEn ?? undefined,
+          legal_entity_name: provider.legalEntityName ?? undefined,
           country_code: provider.countryCode,
           city: provider.city,
           district: provider.district ?? undefined,
@@ -602,6 +777,29 @@ export const createPrismaPlatformPersistenceStore = (
           contact_name: provider.contactName ?? undefined,
           contact_phone: provider.contactPhone ?? undefined,
           contact_email: provider.contactEmail ?? undefined,
+          business_phone: provider.businessPhone ?? undefined,
+          business_email: provider.businessEmail ?? undefined,
+          address_text: provider.addressText ?? undefined,
+          tax_registration_number: provider.taxRegistrationNumber ?? undefined,
+          commercial_registration_number: provider.commercialRegistrationNumber ?? undefined,
+          commercial_registration_file_json: provider.commercialRegistrationFileJson
+            ? stringifyJsonValue(provider.commercialRegistrationFileJson)
+            : undefined,
+          other_services_text: provider.otherServicesText ?? undefined,
+          pickup_lead_time_hours: provider.pickupLeadTimeHours ?? undefined,
+          execution_time_hours: provider.executionTimeHours ?? undefined,
+          delivery_time_hours: provider.deliveryTimeHours ?? undefined,
+          working_days_json: provider.workingDaysJson
+            ? stringifyJsonValue(provider.workingDaysJson)
+            : undefined,
+          working_hours_from: provider.workingHoursFrom ?? undefined,
+          working_hours_to: provider.workingHoursTo ?? undefined,
+          bank_name: provider.bankName ?? undefined,
+          iban: provider.iban ?? undefined,
+          bank_account_holder_name: provider.bankAccountHolderName ?? undefined,
+          account_setup_name: provider.accountSetupName ?? undefined,
+          account_setup_phone: provider.accountSetupPhone ?? undefined,
+          account_setup_email: provider.accountSetupEmail ?? undefined,
           service_area_cities_json: stringifyJsonValue(provider.serviceAreaCitiesJson),
           active: provider.active,
           created_at: provider.createdAt.toISOString(),
@@ -622,6 +820,19 @@ export const createPrismaPlatformPersistenceStore = (
           minimum_pickup_lead_hours: capability.minimumPickupLeadHours,
           pickup_window_start_hour: capability.pickupWindowStartHour,
           pickup_window_end_hour: capability.pickupWindowEndHour,
+          current_approved_price_sar: toNumber(capability.currentApprovedPriceSar),
+          current_status: capability.currentStatus,
+          proposed_price_sar: toNumber(capability.proposedPriceSar),
+          proposed_status: capability.proposedStatus ?? undefined,
+          proposed_submitted_at: toIsoString(capability.proposedSubmittedAt),
+          approved_at: toIsoString(capability.approvedAt),
+          approved_by_account_id: capability.approvedByAccountId ?? undefined,
+          approved_by_role: capability.approvedByRole ?? undefined,
+          rejection_reason_ar: capability.rejectionReasonAr ?? undefined,
+          active_matrix: capability.activeMatrix,
+          available_matrix: capability.availableMatrix,
+          created_at: capability.createdAt.toISOString(),
+          updated_at: capability.updatedAt.toISOString(),
         })),
         capacity: {
           provider_id: provider.id,
@@ -658,6 +869,7 @@ export const createPrismaPlatformPersistenceStore = (
         order: {
           id: order.id,
           hotel_id: order.hotelId,
+          room_number: order.roomNumber ?? undefined,
           provider_id: order.providerId ?? undefined,
           hotel_snapshot_json: stringifyJsonValue(order.hotelSnapshotJson),
           provider_snapshot_json: order.providerSnapshotJson
@@ -674,6 +886,16 @@ export const createPrismaPlatformPersistenceStore = (
           total_item_count: toNumber(order.totalItemCount) ?? 0,
           pickup_at: order.pickupAt.toISOString(),
           notes_ar: order.notesAr ?? undefined,
+          hotel_financial_snapshot_json: order.hotelFinancialSnapshotJson
+            ? stringifyJsonValue(order.hotelFinancialSnapshotJson)
+            : undefined,
+          provider_financial_snapshot_json: order.providerFinancialSnapshotJson
+            ? stringifyJsonValue(order.providerFinancialSnapshotJson)
+            : undefined,
+          hotel_invoice_id: order.hotelInvoiceId ?? undefined,
+          provider_statement_id: order.providerStatementId ?? undefined,
+          billed_at: toIsoString(order.billedAt),
+          settled_at: toIsoString(order.settledAt),
           status_updated_at: order.statusUpdatedAt.toISOString(),
           progress_percent: toNumber(order.progressPercent),
           active_assignment_id: order.activeAssignmentId ?? undefined,
@@ -779,6 +1001,113 @@ export const createPrismaPlatformPersistenceStore = (
           })),
         ),
       })),
+      hotel_invoices: hotelInvoices.map((invoice) => ({
+        id: invoice.id,
+        invoice_number: invoice.invoiceNumber,
+        hotel_id: invoice.hotelId,
+        invoice_date: invoice.invoiceDate,
+        currency_code: invoice.currencyCode,
+        status: invoice.status,
+        order_count: invoice.orderCount,
+        subtotal_ex_vat_sar: toNumber(invoice.subtotalExVatSar) ?? 0,
+        vat_amount_sar: toNumber(invoice.vatAmountSar) ?? 0,
+        total_inc_vat_sar: toNumber(invoice.totalIncVatSar) ?? 0,
+        seller_json: stringifyJsonValue(invoice.sellerJson),
+        buyer_json: stringifyJsonValue(invoice.buyerJson),
+        created_at: invoice.createdAt.toISOString(),
+        updated_at: invoice.updatedAt.toISOString(),
+        issued_at: invoice.issuedAt.toISOString(),
+        collected_at: toIsoString(invoice.collectedAt),
+        collected_by_account_id: invoice.collectedByAccountId ?? undefined,
+        collected_by_role: invoice.collectedByRole ?? undefined,
+        pdf_object_id: invoice.pdfObjectId ?? undefined,
+      })),
+      hotel_invoice_order_lines: hotelInvoices.flatMap((invoice) =>
+        (hotelInvoiceLinesByInvoiceId.get(invoice.id) ?? []).map((line) => ({
+          id: line.id,
+          invoice_id: line.invoiceId,
+          order_id: line.orderId,
+          room_number: line.roomNumber ?? undefined,
+          order_subtotal_ex_vat_sar: toNumber(line.orderSubtotalExVatSar) ?? 0,
+          order_vat_amount_sar: toNumber(line.orderVatAmountSar) ?? 0,
+          order_total_inc_vat_sar: toNumber(line.orderTotalIncVatSar) ?? 0,
+        })),
+      ),
+      provider_statements: providerStatements.map((statement) => ({
+        id: statement.id,
+        statement_number: statement.statementNumber,
+        provider_id: statement.providerId,
+        statement_date: statement.statementDate,
+        currency_code: statement.currencyCode,
+        status: statement.status,
+        order_count: statement.orderCount,
+        subtotal_ex_vat_sar: toNumber(statement.subtotalExVatSar) ?? 0,
+        vat_amount_sar: toNumber(statement.vatAmountSar) ?? 0,
+        total_inc_vat_sar: toNumber(statement.totalIncVatSar) ?? 0,
+        provider_json: stringifyJsonValue(statement.providerJson),
+        created_at: statement.createdAt.toISOString(),
+        updated_at: statement.updatedAt.toISOString(),
+        paid_at: toIsoString(statement.paidAt),
+        paid_by_account_id: statement.paidByAccountId ?? undefined,
+        paid_by_role: statement.paidByRole ?? undefined,
+        pdf_object_id: statement.pdfObjectId ?? undefined,
+      })),
+      provider_statement_order_lines: providerStatements.flatMap((statement) =>
+        (providerStatementLinesByStatementId.get(statement.id) ?? []).map((line) => ({
+          id: line.id,
+          statement_id: line.statementId,
+          order_id: line.orderId,
+          room_number: line.roomNumber ?? undefined,
+          provider_subtotal_ex_vat_sar: toNumber(line.providerSubtotalExVatSar) ?? 0,
+          provider_vat_amount_sar: toNumber(line.providerVatAmountSar) ?? 0,
+          provider_total_inc_vat_sar: toNumber(line.providerTotalIncVatSar) ?? 0,
+        })),
+      ),
+      stored_objects: storedObjects.map((object) => ({
+        id: object.id,
+        storage_provider: object.storageProvider,
+        storage_key: object.storageKey,
+        logical_bucket: object.logicalBucket,
+        file_name: object.fileName,
+        mime_type: object.mimeType,
+        size_bytes: object.sizeBytes,
+        checksum_sha256: object.checksumSha256,
+        content_base64: Buffer.from(object.contentBytes).toString("base64"),
+        metadata_json: stringifyJsonValue(object.metadataJson),
+        created_at: object.createdAt.toISOString(),
+        updated_at: object.updatedAt.toISOString(),
+      })),
+      finance_audit_events: financeAuditEvents.map((event) => ({
+        id: event.id,
+        entity_type: event.entityType,
+        entity_id: event.entityId,
+        action: event.action,
+        previous_status: event.previousStatus,
+        next_status: event.nextStatus,
+        actor_account_id: event.actorAccountId,
+        actor_role: event.actorRole,
+        notes_ar: event.notesAr,
+        metadata_json: stringifyJsonValue(event.metadataJson),
+        occurred_at: event.occurredAt.toISOString(),
+      })),
+      background_jobs: backgroundJobs.map((job) => ({
+        id: job.id,
+        queue_name: job.queueName,
+        job_type: job.jobType,
+        lock_key: job.lockKey,
+        status: job.status,
+        payload_json: stringifyJsonValue(job.payloadJson),
+        attempts: job.attempts,
+        max_attempts: job.maxAttempts,
+        next_run_at: job.nextRunAt.toISOString(),
+        locked_at: toIsoString(job.lockedAt),
+        lock_owner: job.lockOwner,
+        completed_at: toIsoString(job.completedAt),
+        last_error_ar: job.lastErrorAr,
+        idempotency_key: job.idempotencyKey,
+        created_at: job.createdAt.toISOString(),
+        updated_at: job.updatedAt.toISOString(),
+      })),
       notifications: notifications.map((notification) => ({
         id: notification.id,
         recipient_role: notification.recipientRole,
@@ -804,22 +1133,33 @@ export const createPrismaPlatformPersistenceStore = (
   ) => {
     const providerRows = flattenProviderRecords(snapshot.providers);
     const orderRows = flattenOrderRecords(snapshot.orders);
+    const hotelInvoiceRows = flattenHotelInvoiceRecords(snapshot);
+    const providerStatementRows = flattenProviderStatementRecords(snapshot);
 
     await executor.assignmentHistory.deleteMany();
     await executor.matchingLog.deleteMany();
     await executor.reassignmentEvent.deleteMany();
     await executor.settlementLineItem.deleteMany();
+    await executor.hotelInvoiceOrderLine.deleteMany();
+    await executor.providerStatementOrderLine.deleteMany();
     await executor.notification.deleteMany();
     await executor.assignment.deleteMany();
     await executor.sLAHistory.deleteMany();
     await executor.settlement.deleteMany();
+    await executor.hotelInvoice.deleteMany();
+    await executor.providerStatement.deleteMany();
+    await executor.financeAuditEvent.deleteMany();
+    await executor.backgroundJob.deleteMany();
+    await executor.storedObject.deleteMany();
     await executor.orderItem.deleteMany();
     await executor.order.deleteMany();
+    await executor.hotelContractPrice.deleteMany();
     await executor.providerCapability.deleteMany();
     await executor.providerCapacity.deleteMany();
     await executor.providerPerformanceStats.deleteMany();
     await executor.provider.deleteMany();
     await executor.service.deleteMany();
+    await executor.platformProduct.deleteMany();
     await executor.hotel.deleteMany();
     await executor.platformContentAudit.deleteMany();
     await executor.platformContentEntry.deleteMany();
@@ -930,6 +1270,10 @@ export const createPrismaPlatformPersistenceStore = (
         siteNameEn: entry.site_name_en,
         siteTaglineAr: entry.site_tagline_ar,
         siteTaglineEn: entry.site_tagline_en,
+        sellerLegalNameAr: entry.seller_legal_name_ar,
+        sellerVatNumber: entry.seller_vat_number,
+        sellerAddressAr: entry.seller_address_ar,
+        sellerCityAr: entry.seller_city_ar,
         mailFromNameAr: entry.mail_from_name_ar,
         mailFromEmail: entry.mail_from_email,
         supportEmail: entry.support_email,
@@ -1047,6 +1391,20 @@ export const createPrismaPlatformPersistenceStore = (
     );
 
     await createManyIfAny(
+      (input) => executor.platformProduct.createMany(input),
+      snapshot.platform_products.map((product) => ({
+        id: product.id,
+        code: product.code,
+        nameAr: product.name_ar,
+        nameEn: product.name_en,
+        active: product.active,
+        sortOrder: product.sort_order,
+        createdAt: product.created_at ? new Date(product.created_at) : new Date(),
+        updatedAt: product.updated_at ? new Date(product.updated_at) : new Date(),
+      })),
+    );
+
+    await createManyIfAny(
       (input) => executor.service.createMany(input),
       snapshot.services.map((service) => ({
         id: service.id,
@@ -1061,11 +1419,33 @@ export const createPrismaPlatformPersistenceStore = (
         defaultTurnaroundHours: service.default_turnaround_hours,
         supportsRush: service.supports_rush,
         active: service.active,
+        productId: service.product_id,
+        serviceType: service.service_type,
+        pricingUnit: service.pricing_unit,
+        suggestedPriceSar: createDecimal(service.suggested_price_sar),
+        isAvailable: service.is_available ?? true,
+        sortOrder: service.sort_order ?? 0,
+        createdAt: service.created_at ? new Date(service.created_at) : new Date(),
+        updatedAt: service.updated_at ? new Date(service.updated_at) : new Date(),
+      })),
+    );
+    await createManyIfAny(
+      (input) => executor.hotelContractPrice.createMany(input),
+      snapshot.hotel_contract_prices.map((entry) => ({
+        hotelId: entry.hotel_id,
+        serviceId: entry.service_id,
+        unitPriceSar: createDecimal(entry.unit_price_sar),
+        active: entry.active,
+        createdAt: new Date(entry.created_at),
+        updatedAt: new Date(entry.updated_at),
       })),
     );
 
     await createManyIfAny((input) => executor.provider.createMany(input), providerRows.providerRows);
-    await createManyIfAny((input) => executor.providerCapability.createMany(input), providerRows.capabilityRows);
+    await createManyIfAny(
+      (input) => executor.providerCapability.createMany(input),
+      providerRows.capabilityRows,
+    );
     await createManyIfAny((input) => executor.providerCapacity.createMany(input), providerRows.capacityRows);
     await createManyIfAny(
       (input) => executor.providerPerformanceStats.createMany(input),
@@ -1088,6 +1468,73 @@ export const createPrismaPlatformPersistenceStore = (
     await createManyIfAny(
       (input) => executor.settlementLineItem.createMany(input),
       orderRows.settlementLineItemRows,
+    );
+    await createManyIfAny(
+      (input) => executor.storedObject.createMany(input),
+      snapshot.stored_objects.map((object) => ({
+        id: object.id,
+        storageProvider: object.storage_provider,
+        storageKey: object.storage_key,
+        logicalBucket: object.logical_bucket,
+        fileName: object.file_name,
+        mimeType: object.mime_type,
+        sizeBytes: object.size_bytes,
+        checksumSha256: object.checksum_sha256,
+        contentBytes: Buffer.from(object.content_base64, "base64"),
+        metadataJson: object.metadata_json ? parseJsonString(object.metadata_json) : Prisma.JsonNull,
+        createdAt: new Date(object.created_at),
+        updatedAt: new Date(object.updated_at),
+      })),
+    );
+    await createManyIfAny((input) => executor.hotelInvoice.createMany(input), hotelInvoiceRows.hotelInvoiceRows);
+    await createManyIfAny(
+      (input) => executor.hotelInvoiceOrderLine.createMany(input),
+      hotelInvoiceRows.hotelInvoiceLineRows,
+    );
+    await createManyIfAny(
+      (input) => executor.providerStatement.createMany(input),
+      providerStatementRows.providerStatementRows,
+    );
+    await createManyIfAny(
+      (input) => executor.providerStatementOrderLine.createMany(input),
+      providerStatementRows.providerStatementLineRows,
+    );
+    await createManyIfAny(
+      (input) => executor.financeAuditEvent.createMany(input),
+      snapshot.finance_audit_events.map((event) => ({
+        id: event.id,
+        entityType: event.entity_type,
+        entityId: event.entity_id,
+        action: event.action,
+        previousStatus: event.previous_status,
+        nextStatus: event.next_status,
+        actorAccountId: event.actor_account_id,
+        actorRole: event.actor_role,
+        notesAr: event.notes_ar,
+        metadataJson: event.metadata_json ? parseJsonString(event.metadata_json) : Prisma.JsonNull,
+        occurredAt: new Date(event.occurred_at),
+      })),
+    );
+    await createManyIfAny(
+      (input) => executor.backgroundJob.createMany(input),
+      snapshot.background_jobs.map((job) => ({
+        id: job.id,
+        queueName: job.queue_name,
+        jobType: job.job_type,
+        lockKey: job.lock_key,
+        status: job.status,
+        payloadJson: parseJsonString(job.payload_json),
+        attempts: job.attempts,
+        maxAttempts: job.max_attempts,
+        nextRunAt: new Date(job.next_run_at),
+        lockedAt: job.locked_at ? new Date(job.locked_at) : null,
+        lockOwner: job.lock_owner,
+        completedAt: job.completed_at ? new Date(job.completed_at) : null,
+        lastErrorAr: job.last_error_ar,
+        idempotencyKey: job.idempotency_key,
+        createdAt: new Date(job.created_at),
+        updatedAt: new Date(job.updated_at),
+      })),
     );
     await createManyIfAny(
       (input) => executor.notification.createMany(input),

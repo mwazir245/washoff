@@ -1,4 +1,4 @@
-import { createWashoffApiRuntime } from "./runtime";
+import { createWashoffApiRuntime } from "./runtime.ts";
 
 const referenceTime =
   process.argv.slice(2).find((argument) => !argument.startsWith("--")) || new Date().toISOString();

@@ -16,7 +16,7 @@ import { platformQueryKeys } from "@/features/orders/data/queryKeys";
 export const useRegistrationServiceCatalog = () => {
   return useQuery({
     queryKey: platformQueryKeys.registrationServiceCatalog,
-    queryFn: () => getWashoffPlatformService().getServiceCatalog(),
+    queryFn: () => getWashoffPlatformService().getPlatformServiceCatalogAdminData(),
   });
 };
 

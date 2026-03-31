@@ -8,6 +8,9 @@ interface HotelLocationPickerProps {
   latitude?: number;
   longitude?: number;
   onChange: (coordinates: { latitude: number; longitude: number }) => void;
+  title?: string;
+  description?: string;
+  locateButtonLabel?: string;
 }
 
 type GeolocationState = "idle" | "detecting" | "granted" | "denied" | "unsupported";
@@ -29,6 +32,9 @@ const HotelLocationPicker = ({
   latitude,
   longitude,
   onChange,
+  title = "حدد موقع الفندق على الخريطة. سيتم استخدام الموقع لتسهيل التشغيل والاستلام.",
+  description = "عند فتح هذه الخطوة سنحاول تحديد موقعك الحالي تلقائيًا. ويمكنك دائمًا تغيير النقطة يدويًا بالضغط على الخريطة.",
+  locateButtonLabel = "استخدام موقعي الحالي",
 }: HotelLocationPickerProps) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -177,13 +183,8 @@ const HotelLocationPicker = ({
       <div className="accent-panel flex items-start gap-3 px-4 py-4 text-sm leading-7 text-muted-foreground">
         <MapPinned className="mt-1 h-5 w-5 text-primary" />
         <div className="space-y-2">
-          <p className="font-semibold text-foreground">
-            حدد موقع الفندق على الخريطة. سيتم استخدام الموقع لتسهيل التشغيل والاستلام.
-          </p>
-          <p>
-            عند فتح هذه الخطوة سنحاول تحديد موقعك الحالي تلقائيًا. ويمكنك دائمًا تغيير النقطة
-            يدويًا بالضغط على الخريطة.
-          </p>
+          <p className="font-semibold text-foreground">{title}</p>
+          <p>{description}</p>
         </div>
       </div>
 
@@ -214,7 +215,7 @@ const HotelLocationPicker = ({
           ) : (
             <LocateFixed className="h-4 w-4" />
           )}
-          استخدام موقعي الحالي
+          {locateButtonLabel}
         </Button>
       </div>
     </div>

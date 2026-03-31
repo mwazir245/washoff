@@ -4,19 +4,21 @@ import type { Provider } from "@/features/orders/model/provider";
 export enum MatchingCriterion {
   Price = "price",
   SlaSpeed = "sla_speed",
+  SlaComplianceHistory = "sla_compliance_history",
   Rating = "rating",
-  CapacityAvailability = "capacity_availability",
-  OnTimePerformance = "on_time_performance",
+  GeographicProximity = "geographic_proximity",
+  ActiveLoad = "active_load",
 }
 
 export enum EligibilityReasonCode {
   ProviderInactive = "provider_inactive",
   ProviderNotApproved = "provider_not_approved",
   CityMismatch = "city_mismatch",
+  DistrictNotCovered = "district_not_covered",
   ServiceUnsupported = "service_unsupported",
-  QuantityUnsupported = "quantity_unsupported",
-  PickupTimeUnsupported = "pickup_time_unsupported",
-  CapacityUnavailable = "capacity_unavailable",
+  PriceNotApproved = "price_not_approved",
+  SlaIncompatible = "sla_incompatible",
+  ProviderOverloaded = "provider_overloaded",
   ManualBlock = "manual_block",
 }
 
@@ -46,10 +48,14 @@ export interface ProviderCapabilityMatch {
   matchedServiceIds: string[];
   unsupportedServiceIds: string[];
   sameCity: boolean;
-  serviceAreaCovered: boolean;
-  supportsRequestedQuantities: boolean;
-  supportsRequestedPickupTime: boolean;
-  capacityAvailable: boolean;
+  districtCovered: boolean;
+  approvedAndActive: boolean;
+  hasApprovedActivePrice: boolean;
+  slaCompatible: boolean;
+  withinActiveLoadThreshold: boolean;
+  activeLoadRatio: number;
+  currentActiveOrders: number;
+  maxActiveOrders: number;
   isMatch: boolean;
   reasonsAr: string[];
 }
@@ -61,7 +67,9 @@ export interface EligibilityResult {
   reasonCodes: EligibilityReasonCode[];
   blockingReasonsAr: string[];
   capabilityMatch: ProviderCapabilityMatch;
-  availableCapacityKg: number;
+  currentActiveOrders: number;
+  maxActiveOrders: number;
+  activeLoadRatio: number;
   evaluatedAt: ISODateString;
 }
 
@@ -80,9 +88,10 @@ export interface MatchingLog {
 export interface MatchingScoreWeights {
   price: number;
   slaSpeed: number;
+  slaComplianceHistory: number;
   rating: number;
-  capacityAvailability: number;
-  onTimePerformance: number;
+  geographicProximity: number;
+  activeLoad: number;
 }
 
 export interface RankedProviderMatch {
@@ -93,8 +102,9 @@ export interface RankedProviderMatch {
   eligibilityResult: EligibilityResult;
   estimatedPriceSar: number;
   estimatedTurnaroundHours: number;
-  capacityAvailabilityRatio: number;
-  onTimePerformanceRate: number;
+  distanceKm: number;
+  activeLoadRatio: number;
+  slaComplianceRate: number;
 }
 
 export interface ExcludedProviderMatch {
@@ -114,14 +124,15 @@ export interface MatchingRunResult {
 }
 
 export const eligibilityReasonLabelsAr: Record<EligibilityReasonCode, string> = {
-  [EligibilityReasonCode.ProviderInactive]: "المزوّد غير نشط حالياً",
-  [EligibilityReasonCode.ProviderNotApproved]: "المزوّد لم يُعتمد بعد من الإدارة",
-  [EligibilityReasonCode.CityMismatch]: "المزوّد ليس في نفس مدينة الفندق",
-  [EligibilityReasonCode.ServiceUnsupported]: "المزوّد لا يدعم كل الخدمات المطلوبة",
-  [EligibilityReasonCode.QuantityUnsupported]: "الكمية المطلوبة تتجاوز حدود الخدمة لدى المزوّد",
-  [EligibilityReasonCode.PickupTimeUnsupported]: "وقت الاستلام المطلوب غير مدعوم",
-  [EligibilityReasonCode.CapacityUnavailable]: "لا توجد سعة متاحة كافية حالياً",
-  [EligibilityReasonCode.ManualBlock]: "المزوّد محجوب من الإسناد",
+  [EligibilityReasonCode.ProviderInactive]: "المزود غير نشط أو حسابه غير فعال",
+  [EligibilityReasonCode.ProviderNotApproved]: "المزود لم يُعتمد بعد من الإدارة",
+  [EligibilityReasonCode.CityMismatch]: "المزود ليس في نفس مدينة الفندق",
+  [EligibilityReasonCode.DistrictNotCovered]: "حي الفندق خارج نطاق التغطية المعتمد للمزود",
+  [EligibilityReasonCode.ServiceUnsupported]: "المزود لا يقدّم الخدمة المطلوبة لهذا المنتج",
+  [EligibilityReasonCode.PriceNotApproved]: "لا يوجد سعر معتمد ونشط لهذه الخدمة لدى المزود",
+  [EligibilityReasonCode.SlaIncompatible]: "المزود لا يحقق متطلبات SLA المطلوبة لهذا الطلب",
+  [EligibilityReasonCode.ProviderOverloaded]: "المزود تجاوز الحد الأقصى للطلبات النشطة",
+  [EligibilityReasonCode.ManualBlock]: "المزود محجوب من الإسناد",
 };
 
 export const matchingDecisionLabelsAr: Record<MatchingDecision, string> = {
@@ -130,13 +141,9 @@ export const matchingDecisionLabelsAr: Record<MatchingDecision, string> = {
   [MatchingDecision.Skipped]: "تم استبعاده",
 };
 
-export const createEmptyScoreBreakdown = (): ScoreBreakdown => {
-  return {
-    totalScore: 0,
-    entries: [],
-  };
-};
+export const createEmptyScoreBreakdown = (): ScoreBreakdown => ({
+  totalScore: 0,
+  entries: [],
+});
 
-export const isProviderEligible = (result: EligibilityResult) => {
-  return result.eligible;
-};
+export const isProviderEligible = (result: EligibilityResult) => result.eligible;

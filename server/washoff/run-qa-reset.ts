@@ -1,4 +1,4 @@
-import { createQaPrismaClient, printQaCredentials, resetQaDatabase, seedQaDatabase } from "./qa-environment";
+import { createQaPrismaClient, printQaCredentials, resetQaDatabase, seedQaDatabase } from "./qa-environment.ts";
 
 const run = async () => {
   const prisma = createQaPrismaClient();

@@ -5,35 +5,23 @@ import type {
   ISODateString,
   LocalizedText,
 } from "@/features/orders/model/common";
+import {
+  getSaudiCities,
+  getSaudiCityLabelsAr,
+  type SaudiCityId,
+  type SaudiDistrictId,
+} from "@/features/orders/model/location-catalog";
 import type { OnboardingReviewState } from "@/features/orders/model/onboarding";
+import type { HotelSlaProfile } from "@/features/orders/model/sla";
 
 export type HotelClassification = "three_star" | "four_star" | "five_star" | "other";
 export type HotelServiceLevel = "standard" | "express" | "vip";
 export type HotelDelegationStatus = "not_provided" | "pending_review" | "approved" | "rejected";
 export type HotelRegistrationDocumentKind = "commercial_registration" | "delegation_letter";
+export type HotelRegistrationSaudiCity = string;
 
-export const HOTEL_REGISTRATION_SAUDI_CITIES_AR = [
-  "الرياض",
-  "جدة",
-  "مكة المكرمة",
-  "المدينة المنورة",
-  "الدمام",
-  "الخبر",
-  "الظهران",
-  "الطائف",
-  "تبوك",
-  "أبها",
-  "خميس مشيط",
-  "القصيم",
-  "بريدة",
-  "حائل",
-  "جازان",
-  "نجران",
-  "الأحساء",
-  "الجبيل",
-] as const;
-
-export type HotelRegistrationSaudiCity = (typeof HOTEL_REGISTRATION_SAUDI_CITIES_AR)[number];
+export const HOTEL_REGISTRATION_SAUDI_CITY_OPTIONS = getSaudiCities();
+export const HOTEL_REGISTRATION_SAUDI_CITIES_AR = getSaudiCityLabelsAr();
 
 export const hotelClassificationLabelsAr: Record<HotelClassification, string> = {
   three_star: "3 نجوم",
@@ -118,6 +106,8 @@ export interface HotelRegistrationInput {
   hotelName: string;
   legalEntityName?: string;
   city: HotelRegistrationSaudiCity;
+  cityId: SaudiCityId;
+  districtId: SaudiDistrictId;
   hotelClassification: HotelClassification;
   roomCount: number;
   taxRegistrationNumber: string;
@@ -153,6 +143,7 @@ export interface Hotel extends AuditFields {
   operationalProfile: HotelOperationalProfile;
   logistics: HotelLogisticsProfile;
   compliance: HotelComplianceProfile;
+  slaProfile: HotelSlaProfile;
   contractedServiceIds: string[];
   active: boolean;
   notesAr?: string;

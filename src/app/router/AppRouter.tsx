@@ -5,12 +5,17 @@ import ActivateAccountPage from "@/features/auth/pages/ActivateAccountPage";
 import ForgotPasswordPage from "@/features/auth/pages/ForgotPasswordPage";
 import ResetPasswordPage from "@/features/auth/pages/ResetPasswordPage";
 import AdminContentPage from "@/features/content/pages/AdminContentPage";
+import AdminFinancePage from "@/features/admin/pages/AdminFinancePage";
 import AdminMatchingPage from "@/features/admin/pages/AdminMatchingPage";
 import AdminOrdersPage from "@/features/admin/pages/AdminOrdersPage";
+import AdminProviderPricingPage from "@/features/admin/pages/AdminProviderPricingPage";
+import AdminServicesPage from "@/features/admin/pages/AdminServicesPage";
 import RequireAccountAccess from "@/features/auth/components/RequireAccountAccess";
 import { AccountRole } from "@/features/auth/model";
 import HotelDashboardPage from "@/features/hotel/pages/HotelDashboardPage";
+import HotelBillingPage from "@/features/hotel/pages/HotelBillingPage";
 import ProviderDashboardPage from "@/features/provider/pages/ProviderDashboardPage";
+import ProviderSettlementsPage from "@/features/provider/pages/ProviderSettlementsPage";
 import AdminDashboardPage from "@/features/admin/pages/AdminDashboardPage";
 import HotelRegistrationPage from "@/features/onboarding/pages/HotelRegistrationPage";
 import ProviderRegistrationPage from "@/features/onboarding/pages/ProviderRegistrationPage";
@@ -39,10 +44,26 @@ export const AppRouter = () => {
           }
         />
         <Route
+          path={appRoutes.hotelBilling}
+          element={
+            <RequireAccountAccess allowedRoles={[AccountRole.Hotel, AccountRole.Admin]}>
+              <HotelBillingPage />
+            </RequireAccountAccess>
+          }
+        />
+        <Route
           path={appRoutes.providerDashboard}
           element={
             <RequireAccountAccess allowedRoles={[AccountRole.Provider, AccountRole.Admin]}>
               <ProviderDashboardPage />
+            </RequireAccountAccess>
+          }
+        />
+        <Route
+          path={appRoutes.providerSettlements}
+          element={
+            <RequireAccountAccess allowedRoles={[AccountRole.Provider, AccountRole.Admin]}>
+              <ProviderSettlementsPage />
             </RequireAccountAccess>
           }
         />
@@ -67,6 +88,30 @@ export const AppRouter = () => {
           element={
             <RequireAccountAccess allowedRoles={[AccountRole.Admin]}>
               <AdminMatchingPage />
+            </RequireAccountAccess>
+          }
+        />
+        <Route
+          path={appRoutes.adminFinance}
+          element={
+            <RequireAccountAccess allowedRoles={[AccountRole.Admin]}>
+              <AdminFinancePage />
+            </RequireAccountAccess>
+          }
+        />
+        <Route
+          path={appRoutes.adminServices}
+          element={
+            <RequireAccountAccess allowedRoles={[AccountRole.Admin]}>
+              <AdminServicesPage />
+            </RequireAccountAccess>
+          }
+        />
+        <Route
+          path={appRoutes.adminProviderPricing}
+          element={
+            <RequireAccountAccess allowedRoles={[AccountRole.Admin]}>
+              <AdminProviderPricingPage />
             </RequireAccountAccess>
           }
         />

@@ -95,6 +95,10 @@ model PlatformSettings {
   siteNameEn                   String   @map("site_name_en")
   siteTaglineAr                String   @map("site_tagline_ar")
   siteTaglineEn                String   @map("site_tagline_en")
+  sellerLegalNameAr            String   @default("") @map("seller_legal_name_ar")
+  sellerVatNumber              String   @default("") @map("seller_vat_number")
+  sellerAddressAr              String   @default("") @map("seller_address_ar")
+  sellerCityAr                 String   @default("") @map("seller_city_ar")
   mailFromNameAr               String   @map("mail_from_name_ar")
   mailFromEmail                String   @map("mail_from_email")
   supportEmail                 String?  @map("support_email")
@@ -207,8 +211,25 @@ model Hotel {
   reviewNotesAr            String?  @map("review_notes_ar")
   createdAt                DateTime @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime @map("updated_at") @db.Timestamptz(6)
+  contractPrices           HotelContractPrice[]
+  invoices                 HotelInvoice[]
+  orders                   Order[]
 
   @@map("hotels")
+}
+
+model PlatformProduct {
+  id        String   @id
+  code      String   @unique
+  nameAr    String   @map("name_ar")
+  nameEn    String?  @map("name_en")
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @db.Timestamptz(6)
+  services  Service[]
+
+  @@map("platform_products")
 }
 
 model Service {
@@ -224,6 +245,20 @@ model Service {
   defaultTurnaroundHours Int     @map("default_turnaround_hours")
   supportsRush           Boolean @default(false) @map("supports_rush")
   active                 Boolean @default(true)
+  productId              String? @map("product_id")
+  serviceType            String? @map("service_type")
+  pricingUnit            String? @map("pricing_unit")
+  suggestedPriceSar      Decimal? @map("suggested_price_sar") @db.Decimal(12, 2)
+  isAvailable            Boolean @default(true) @map("is_available")
+  sortOrder              Int     @default(0) @map("sort_order")
+  createdAt              DateTime @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime @map("updated_at") @db.Timestamptz(6)
+  product                PlatformProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  hotelContractPrices    HotelContractPrice[]
+  providerCapabilities   ProviderCapability[]
+  orderItems             OrderItem[]
+
+  @@index([productId, serviceType])
 
   @@map("services")
 }
@@ -235,6 +270,7 @@ model Provider {
   legalNameEn           String?  @map("legal_name_en")
   displayNameAr         String   @map("display_name_ar")
   displayNameEn         String?  @map("display_name_en")
+  legalEntityName       String?  @map("legal_entity_name")
   countryCode           String   @map("country_code")
   city                  String
   district              String?
@@ -246,6 +282,25 @@ model Provider {
   contactName           String?  @map("contact_name")
   contactPhone          String?  @map("contact_phone")
   contactEmail          String?  @map("contact_email")
+  businessPhone         String?  @map("business_phone")
+  businessEmail         String?  @map("business_email")
+  addressText           String?  @map("address_text")
+  taxRegistrationNumber String   @default("") @map("tax_registration_number")
+  commercialRegistrationNumber String? @map("commercial_registration_number")
+  commercialRegistrationFileJson Json? @map("commercial_registration_file_json")
+  otherServicesText     String?  @map("other_services_text")
+  pickupLeadTimeHours   Int?     @map("pickup_lead_time_hours")
+  executionTimeHours    Int?     @map("execution_time_hours")
+  deliveryTimeHours     Int?     @map("delivery_time_hours")
+  workingDaysJson       Json?    @map("working_days_json")
+  workingHoursFrom      String?  @map("working_hours_from")
+  workingHoursTo        String?  @map("working_hours_to")
+  bankName              String?  @map("bank_name")
+  iban                  String?
+  bankAccountHolderName String?  @map("bank_account_holder_name")
+  accountSetupName      String?  @map("account_setup_name")
+  accountSetupPhone     String?  @map("account_setup_phone")
+  accountSetupEmail     String?  @map("account_setup_email")
   serviceAreaCitiesJson Json     @map("service_area_cities_json")
   active                Boolean  @default(true)
   notesAr               String?  @map("notes_ar")
@@ -257,6 +312,9 @@ model Provider {
   reviewNotesAr         String?  @map("review_notes_ar")
   createdAt             DateTime @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime @map("updated_at") @db.Timestamptz(6)
+  statements            ProviderStatement[]
+  orders                Order[]
+  capabilities          ProviderCapability[]
 
   @@map("providers")
 }
@@ -276,8 +334,25 @@ model ProviderCapability {
   minimumPickupLeadHours  Int      @map("minimum_pickup_lead_hours")
   pickupWindowStartHour   Int      @map("pickup_window_start_hour")
   pickupWindowEndHour     Int      @map("pickup_window_end_hour")
+  currentApprovedPriceSar Decimal? @map("current_approved_price_sar") @db.Decimal(12, 2)
+  currentStatus           String   @default("inactive") @map("current_status")
+  proposedPriceSar        Decimal? @map("proposed_price_sar") @db.Decimal(12, 2)
+  proposedStatus          String?  @map("proposed_status")
+  proposedSubmittedAt     DateTime? @map("proposed_submitted_at") @db.Timestamptz(6)
+  approvedAt              DateTime? @map("approved_at") @db.Timestamptz(6)
+  approvedByAccountId     String?   @map("approved_by_account_id")
+  approvedByRole          String?   @map("approved_by_role")
+  rejectionReasonAr       String?   @map("rejection_reason_ar")
+  activeMatrix            Boolean   @default(true) @map("active_matrix")
+  availableMatrix         Boolean   @default(true) @map("available_matrix")
+  createdAt               DateTime  @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime  @map("updated_at") @db.Timestamptz(6)
+  provider                Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  service                 Service   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
   @@id([providerId, serviceId])
+  @@index([serviceId, currentStatus])
+  @@index([providerId, currentStatus])
   @@map("provider_capabilities")
 }
 
@@ -317,6 +392,7 @@ model ProviderPerformanceStats {
 model Order {
   id                   String    @id
   hotelId              String    @map("hotel_id")
+  roomNumber           String?   @map("room_number")
   providerId           String?   @map("provider_id")
   hotelSnapshotJson    Json      @map("hotel_snapshot_json")
   providerSnapshotJson Json?     @map("provider_snapshot_json")
@@ -329,14 +405,126 @@ model Order {
   totalItemCount       Decimal   @map("total_item_count") @db.Decimal(12, 2)
   pickupAt             DateTime  @map("pickup_at") @db.Timestamptz(6)
   notesAr              String?   @map("notes_ar")
+  hotelFinancialSnapshotJson Json? @map("hotel_financial_snapshot_json")
+  providerFinancialSnapshotJson Json? @map("provider_financial_snapshot_json")
+  hotelInvoiceId       String?   @map("hotel_invoice_id")
+  providerStatementId  String?   @map("provider_statement_id")
+  billedAt             DateTime? @map("billed_at") @db.Timestamptz(6)
+  settledAt            DateTime? @map("settled_at") @db.Timestamptz(6)
   statusUpdatedAt      DateTime  @map("status_updated_at") @db.Timestamptz(6)
   progressPercent      Decimal?  @map("progress_percent") @db.Decimal(5, 2)
   activeAssignmentId   String?   @map("active_assignment_id")
   slaWindowJson        Json      @map("sla_window_json")
   createdAt            DateTime  @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime  @map("updated_at") @db.Timestamptz(6)
+  hotel                Hotel     @relation(fields: [hotelId], references: [id], onDelete: Restrict)
+  provider             Provider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  hotelInvoice         HotelInvoice? @relation(fields: [hotelInvoiceId], references: [id], onDelete: SetNull)
+  providerStatement    ProviderStatement? @relation(fields: [providerStatementId], references: [id], onDelete: SetNull)
+  orderItems           OrderItem[]
+  hotelInvoiceLine     HotelInvoiceOrderLine?
+  providerStatementLine ProviderStatementOrderLine?
 
+  @@index([hotelId, createdAt])
+  @@index([providerId, createdAt])
+  @@index([status, createdAt])
+  @@index([hotelId, status, createdAt])
+  @@index([providerId, status, createdAt])
+  @@index([hotelInvoiceId])
+  @@index([providerStatementId])
   @@map("orders")
+}
+
+model HotelInvoice {
+  id                String   @id
+  invoiceNumber     String   @unique @map("invoice_number")
+  hotelId           String   @map("hotel_id")
+  invoiceDate       String   @map("invoice_date") @db.VarChar(10)
+  currencyCode      String   @map("currency_code")
+  status            String
+  orderCount        Int      @map("order_count")
+  subtotalExVatSar  Decimal  @map("subtotal_ex_vat_sar") @db.Decimal(12, 2)
+  vatAmountSar      Decimal  @map("vat_amount_sar") @db.Decimal(12, 2)
+  totalIncVatSar    Decimal  @map("total_inc_vat_sar") @db.Decimal(12, 2)
+  sellerJson        Json     @map("seller_json")
+  buyerJson         Json     @map("buyer_json")
+  pdfObjectId       String?  @unique @map("pdf_object_id")
+  createdAt         DateTime @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @map("updated_at") @db.Timestamptz(6)
+  issuedAt          DateTime @map("issued_at") @db.Timestamptz(6)
+  collectedAt       DateTime? @map("collected_at") @db.Timestamptz(6)
+  collectedByAccountId String? @map("collected_by_account_id")
+  collectedByRole   String?  @map("collected_by_role")
+  hotel             Hotel    @relation(fields: [hotelId], references: [id], onDelete: Restrict)
+  pdfObject         StoredObject? @relation("hotel_invoice_pdf", fields: [pdfObjectId], references: [id], onDelete: SetNull)
+  lines             HotelInvoiceOrderLine[]
+  orders            Order[]
+
+  @@index([hotelId, invoiceDate])
+  @@index([hotelId, status, invoiceDate])
+  @@index([status, invoiceDate])
+  @@unique([hotelId, invoiceDate])
+  @@map("hotel_invoices")
+}
+
+model HotelInvoiceOrderLine {
+  id                    String  @id
+  invoiceId             String  @map("invoice_id")
+  orderId               String  @unique @map("order_id")
+  roomNumber            String? @map("room_number")
+  orderSubtotalExVatSar Decimal @map("order_subtotal_ex_vat_sar") @db.Decimal(12, 2)
+  orderVatAmountSar     Decimal @map("order_vat_amount_sar") @db.Decimal(12, 2)
+  orderTotalIncVatSar   Decimal @map("order_total_inc_vat_sar") @db.Decimal(12, 2)
+  invoice               HotelInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  order                 Order        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId])
+  @@map("hotel_invoice_order_lines")
+}
+
+model ProviderStatement {
+  id                String   @id
+  statementNumber   String   @unique @map("statement_number")
+  providerId        String   @map("provider_id")
+  statementDate     String   @map("statement_date") @db.VarChar(10)
+  currencyCode      String   @map("currency_code")
+  status            String
+  orderCount        Int      @map("order_count")
+  subtotalExVatSar  Decimal  @map("subtotal_ex_vat_sar") @db.Decimal(12, 2)
+  vatAmountSar      Decimal  @map("vat_amount_sar") @db.Decimal(12, 2)
+  totalIncVatSar    Decimal  @map("total_inc_vat_sar") @db.Decimal(12, 2)
+  providerJson      Json     @map("provider_json")
+  pdfObjectId       String?  @unique @map("pdf_object_id")
+  createdAt         DateTime @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @map("updated_at") @db.Timestamptz(6)
+  paidAt            DateTime? @map("paid_at") @db.Timestamptz(6)
+  paidByAccountId   String?  @map("paid_by_account_id")
+  paidByRole        String?  @map("paid_by_role")
+  provider          Provider @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  pdfObject         StoredObject? @relation("provider_statement_pdf", fields: [pdfObjectId], references: [id], onDelete: SetNull)
+  lines             ProviderStatementOrderLine[]
+  orders            Order[]
+
+  @@index([providerId, statementDate])
+  @@index([providerId, status, statementDate])
+  @@index([status, statementDate])
+  @@unique([providerId, statementDate])
+  @@map("provider_statements")
+}
+
+model ProviderStatementOrderLine {
+  id                       String  @id
+  statementId              String  @map("statement_id")
+  orderId                  String  @unique @map("order_id")
+  roomNumber               String? @map("room_number")
+  providerSubtotalExVatSar Decimal @map("provider_subtotal_ex_vat_sar") @db.Decimal(12, 2)
+  providerVatAmountSar     Decimal @map("provider_vat_amount_sar") @db.Decimal(12, 2)
+  providerTotalIncVatSar   Decimal @map("provider_total_inc_vat_sar") @db.Decimal(12, 2)
+  statement                ProviderStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  order                    Order             @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([statementId])
+  @@map("provider_statement_order_lines")
 }
 
 model OrderItem {
@@ -350,7 +538,11 @@ model OrderItem {
   unitPriceSar          Decimal  @map("unit_price_sar") @db.Decimal(12, 2)
   estimatedLineTotalSar Decimal  @map("estimated_line_total_sar") @db.Decimal(12, 2)
   notesAr               String?  @map("notes_ar")
+  order                 Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  service               Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
 
+  @@index([orderId])
+  @@index([serviceId])
   @@map("order_items")
 }
 
@@ -425,6 +617,83 @@ model SLAHistory {
   notesAr    String?   @map("notes_ar")
 
   @@map("sla_history")
+}
+
+model HotelContractPrice {
+  hotelId      String   @map("hotel_id")
+  serviceId    String   @map("service_id")
+  unitPriceSar Decimal  @map("unit_price_sar") @db.Decimal(12, 2)
+  active       Boolean  @default(true)
+  createdAt    DateTime @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @map("updated_at") @db.Timestamptz(6)
+  hotel        Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  service      Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([hotelId, serviceId])
+  @@index([hotelId, active])
+  @@index([serviceId, active])
+  @@map("hotel_contract_prices")
+}
+
+model StoredObject {
+  id                 String   @id
+  storageProvider    String   @map("storage_provider")
+  storageKey         String   @unique @map("storage_key")
+  logicalBucket      String   @map("logical_bucket")
+  fileName           String   @map("file_name")
+  mimeType           String   @map("mime_type")
+  sizeBytes          Int      @map("size_bytes")
+  checksumSha256     String   @map("checksum_sha256")
+  contentBytes       Bytes    @map("content_bytes")
+  metadataJson       Json?    @map("metadata_json")
+  createdAt          DateTime @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @map("updated_at") @db.Timestamptz(6)
+  hotelInvoicePdf    HotelInvoice? @relation("hotel_invoice_pdf")
+  providerStatementPdf ProviderStatement? @relation("provider_statement_pdf")
+
+  @@index([logicalBucket, createdAt])
+  @@map("stored_objects")
+}
+
+model FinanceAuditEvent {
+  id             String   @id
+  entityType     String   @map("entity_type")
+  entityId       String   @map("entity_id")
+  action         String
+  previousStatus String?  @map("previous_status")
+  nextStatus     String   @map("next_status")
+  actorAccountId String?  @map("actor_account_id")
+  actorRole      String?  @map("actor_role")
+  notesAr        String?  @map("notes_ar")
+  metadataJson   Json?    @map("metadata_json")
+  occurredAt     DateTime @map("occurred_at") @db.Timestamptz(6)
+
+  @@index([entityType, entityId, occurredAt])
+  @@index([action, occurredAt])
+  @@map("finance_audit_events")
+}
+
+model BackgroundJob {
+  id            String   @id
+  queueName     String   @map("queue_name")
+  jobType       String   @map("job_type")
+  lockKey       String   @map("lock_key")
+  status        String
+  payloadJson   Json     @map("payload_json")
+  attempts      Int      @default(0)
+  maxAttempts   Int      @default(3) @map("max_attempts")
+  nextRunAt     DateTime @map("next_run_at") @db.Timestamptz(6)
+  lockedAt      DateTime? @map("locked_at") @db.Timestamptz(6)
+  lockOwner     String?  @map("lock_owner")
+  completedAt   DateTime? @map("completed_at") @db.Timestamptz(6)
+  lastErrorAr   String?  @map("last_error_ar")
+  idempotencyKey String? @unique @map("idempotency_key")
+  createdAt     DateTime @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @map("updated_at") @db.Timestamptz(6)
+
+  @@index([queueName, status, nextRunAt])
+  @@index([lockKey, status])
+  @@map("background_jobs")
 }
 
 model Settlement {

@@ -6,7 +6,7 @@ import {
   getOrderServiceNames,
   type LaundryOrder,
 } from "@/features/orders/model/order";
-import { formatDateTimeLabel, formatSar } from "@/shared/lib/formatters";
+import { formatDateTimeLabel } from "@/shared/lib/formatters";
 
 interface IncomingAssignmentCardProps {
   order: LaundryOrder;
@@ -101,19 +101,19 @@ const IncomingAssignmentCard = ({
 
         <div className="accent-panel flex items-center justify-between gap-3 px-4 py-4">
           <div>
-            <p className="text-xs font-semibold tracking-[0.08em] text-muted-foreground">القيمة التقديرية</p>
-            <p className="mt-1 text-lg font-bold text-foreground">{formatSar(order.estimatedSubtotalSar)}</p>
+            <p className="text-xs font-semibold tracking-[0.08em] text-muted-foreground">الجاهزية التشغيلية</p>
+            <p className="mt-1 text-lg font-bold text-foreground">بانتظار قرار القبول</p>
           </div>
           <div className="text-left text-xs leading-6 text-muted-foreground">
-            يتم تثبيت السعة للمزود عند القبول النهائي
+            سيتم تثبيت المستحقات الخاصة بالمزوّد عند اكتمال الطلب وإدراجه في كشف المستحقات اليومي.
           </div>
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Button className="flex-1 min-w-[160px]" disabled={isPending} onClick={onAccept}>
+          <Button className="min-w-[160px] flex-1" disabled={isPending} onClick={onAccept}>
             قبول الإسناد
           </Button>
-          <Button className="flex-1 min-w-[160px]" variant="outline" disabled={isPending} onClick={onReject}>
+          <Button className="min-w-[160px] flex-1" variant="outline" disabled={isPending} onClick={onReject}>
             رفض وتحويل للبديل
           </Button>
         </div>

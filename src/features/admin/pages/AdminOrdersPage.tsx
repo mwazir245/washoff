@@ -12,7 +12,11 @@ import {
 import { Progress } from "@/components/ui/progress";
 import AdminOrderDetailsDrawer from "@/features/admin/components/AdminOrderDetailsDrawer";
 import AdminWorkspaceLayout from "@/features/admin/components/AdminWorkspaceLayout";
-import { useAdminOrders, type LaundryOrder } from "@/features/admin/hooks/useAdminOperations";
+import {
+  useAdminOrdersPage,
+  useAdminProviders,
+  type LaundryOrder,
+} from "@/features/admin/hooks/useAdminOperations";
 import {
   formatAdminCurrency,
   formatAdminDateTime,
@@ -32,7 +36,7 @@ const PAGE_SIZE = 20;
 
 const AdminOrdersPage = () => {
   const { language } = usePlatformLanguage();
-  const ordersQuery = useAdminOrders();
+  const providersQuery = useAdminProviders();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [providerFilter, setProviderFilter] = useState<string>("all");
@@ -41,62 +45,30 @@ const AdminOrdersPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedOrder, setSelectedOrder] = useState<LaundryOrder | undefined>();
 
-  const providerOptions = useMemo(() => {
-    const providerMap = new Map<string, string>();
-
-    for (const order of ordersQuery.data ?? []) {
-      if (order.providerId && order.providerSnapshot?.displayName.ar) {
-        providerMap.set(order.providerId, order.providerSnapshot.displayName.ar);
-      }
-    }
-
-    return Array.from(providerMap.entries())
-      .map(([id, label]) => ({ id, label }))
-      .sort((left, right) => left.label.localeCompare(right.label, "ar"));
-  }, [ordersQuery.data]);
-
-  const filteredOrders = useMemo(() => {
-    const normalizedSearch = searchQuery.trim().toLowerCase();
-
-    return (ordersQuery.data ?? []).filter((order) => {
-      const matchesSearch =
-        normalizedSearch.length === 0
-          ? true
-          : [
-              order.id,
-              order.hotelSnapshot.displayName.ar,
-              order.providerSnapshot?.displayName.ar ?? "",
-              order.items.map((item) => item.serviceName.ar).join(" "),
-            ]
-              .join(" ")
-              .toLowerCase()
-              .includes(normalizedSearch);
-
-      const matchesStatus = statusFilter === "all" ? true : order.status === statusFilter;
-      const matchesProvider = providerFilter === "all" ? true : order.providerId === providerFilter;
-      const orderDate = order.createdAt.slice(0, 10);
-      const matchesDateFrom = dateFrom ? orderDate >= dateFrom : true;
-      const matchesDateTo = dateTo ? orderDate <= dateTo : true;
-
-      return matchesSearch && matchesStatus && matchesProvider && matchesDateFrom && matchesDateTo;
-    });
-  }, [dateFrom, dateTo, ordersQuery.data, providerFilter, searchQuery, statusFilter]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
-  const paginatedOrders = useMemo(
-    () => filteredOrders.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
-    [currentPage, filteredOrders],
-  );
+  const ordersQuery = useAdminOrdersPage({
+    page: currentPage,
+    pageSize: PAGE_SIZE,
+    search: searchQuery || undefined,
+    status: statusFilter === "all" ? undefined : statusFilter,
+    providerId: providerFilter === "all" ? undefined : providerFilter,
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+  });
 
   useEffect(() => {
     setCurrentPage(1);
   }, [dateFrom, dateTo, providerFilter, searchQuery, statusFilter]);
 
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [currentPage, totalPages]);
+  const providerOptions = useMemo(
+    () =>
+      (providersQuery.data ?? [])
+        .map((provider) => ({
+          id: provider.id,
+          label: provider.displayName.ar,
+        }))
+        .sort((left, right) => left.label.localeCompare(right.label, "ar")),
+    [providersQuery.data],
+  );
 
   const columns: DataTableColumn<LaundryOrder>[] = [
     {
@@ -136,7 +108,7 @@ const AdminOrdersPage = () => {
           </p>
           <p className="text-xs leading-6 text-muted-foreground">
             {language === "en"
-              ? `Assignments ${formatAdminNumber(order.assignmentHistory.length, language)}`
+              ? `Assignment attempts ${formatAdminNumber(order.assignmentHistory.length, language)}`
               : `محاولات الإسناد ${formatAdminNumber(order.assignmentHistory.length, language)}`}
           </p>
         </div>
@@ -185,7 +157,9 @@ const AdminOrdersPage = () => {
       header: language === "en" ? "Value" : "القيمة",
       cellClassName: "whitespace-nowrap",
       cell: (order) => (
-        <p className="font-semibold text-foreground">{formatAdminCurrency(order.estimatedSubtotalSar, language)}</p>
+        <p className="font-semibold text-foreground">
+          {formatAdminCurrency(order.estimatedSubtotalSar, language)}
+        </p>
       ),
     },
   ];
@@ -202,11 +176,15 @@ const AdminOrdersPage = () => {
     return (
       <AdminWorkspaceLayout
         title={language === "en" ? "Orders" : "الطلبات"}
-        subtitle={language === "en" ? "Unable to load admin orders." : "تعذر تحميل قائمة الطلبات الإدارية."}
+        subtitle={
+          language === "en"
+            ? "Unable to load admin orders."
+            : "تعذّر تحميل قائمة الطلبات الإدارية."
+        }
         eyebrow={language === "en" ? "Admin operations" : "تشغيل الإدارة"}
       >
         <EmptyState
-          title={language === "en" ? "Unable to load orders" : "تعذر تحميل الطلبات"}
+          title={language === "en" ? "Unable to load orders" : "تعذّر تحميل الطلبات"}
           description={
             ordersQuery.error instanceof Error
               ? ordersQuery.error.message
@@ -214,7 +192,11 @@ const AdminOrdersPage = () => {
                 ? "An unexpected error occurred while loading orders."
                 : "حدث خطأ غير متوقع أثناء تحميل الطلبات."
           }
-          action={<Button onClick={() => void ordersQuery.refetch()}>{language === "en" ? "Retry" : "إعادة المحاولة"}</Button>}
+          action={
+            <Button onClick={() => void ordersQuery.refetch()}>
+              {language === "en" ? "Retry" : "إعادة المحاولة"}
+            </Button>
+          }
         />
       </AdminWorkspaceLayout>
     );
@@ -225,8 +207,8 @@ const AdminOrdersPage = () => {
       title={language === "en" ? "Orders" : "الطلبات"}
       subtitle={
         language === "en"
-          ? "A scalable operations table for orders, filters, and drill-down details."
-          : "جدول تشغيلي قابل للتوسع لعرض الطلبات والفلاتر والتفاصيل الكاملة."
+          ? "Server-driven operational table with search, filters, and paginated drill-down."
+          : "جدول تشغيلي يعتمد على الخادم في البحث والتصفية والتقسيم إلى صفحات مع تفاصيل الطلب."
       }
       eyebrow={language === "en" ? "Admin operations" : "تشغيل الإدارة"}
     >
@@ -243,12 +225,12 @@ const AdminOrdersPage = () => {
         description={
           language === "en"
             ? "Search by order, hotel, provider, or service name. Filter by status, provider, and creation date."
-            : "ابحث بالطلب أو الفندق أو المزوّد أو الخدمة، ثم صفِّ النتائج حسب الحالة والمزوّد وتاريخ الإنشاء."
+            : "ابحث برقم الطلب أو الفندق أو المزوّد أو اسم الخدمة، ثم صفِّ النتائج حسب الحالة والمزوّد وتاريخ الإنشاء."
         }
         summary={
           language === "en"
-            ? `${formatAdminNumber(filteredOrders.length, language)} matching orders`
-            : `${formatAdminNumber(filteredOrders.length, language)} طلبًا مطابقًا للفلاتر`
+            ? `${formatAdminNumber(ordersQuery.data?.total ?? 0, language)} matching orders`
+            : `${formatAdminNumber(ordersQuery.data?.total ?? 0, language)} طلبًا مطابقًا للفلاتر`
         }
         actions={
           <Button type="button" variant="outline" onClick={resetFilters}>
@@ -327,7 +309,7 @@ const AdminOrdersPage = () => {
       <section className="space-y-5">
         <DataTable
           columns={columns}
-          rows={paginatedOrders}
+          rows={ordersQuery.data?.items ?? []}
           getRowKey={(order) => order.id}
           onRowClick={(order) => setSelectedOrder(order)}
           emptyState={
@@ -343,7 +325,11 @@ const AdminOrdersPage = () => {
         />
 
         <div className="surface-card px-6 py-5 sm:px-8">
-          <PaginationBar currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+          <PaginationBar
+            currentPage={ordersQuery.data?.page ?? currentPage}
+            totalPages={ordersQuery.data?.totalPages ?? 1}
+            onPageChange={setCurrentPage}
+          />
         </div>
       </section>
 

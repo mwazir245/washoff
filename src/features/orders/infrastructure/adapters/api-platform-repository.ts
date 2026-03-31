@@ -1,8 +1,17 @@
-import { getStoredClientSessionToken } from "@/features/auth/infrastructure/client-auth-storage";
 import type {
   AccountAdminSummary,
+  ApproveProviderServicePricingCommand,
+  ApproveProviderServicePricingResult,
+  GetAdminFinanceDataResult,
+  GetAdminFinancePageCommand,
+  GetAdminFinancePageResult,
   CurrentAccountSessionResult,
+  GetHotelBillingDataResult,
+  GetPlatformServiceCatalogAdminResult,
   GetPlatformPageContentResult,
+  GetProviderPricingAdminDataResult,
+  GetProviderFinanceDataResult,
+  GetProviderServiceManagementResult,
   GetPlatformRuntimeStatusResult,
   GetPlatformSettingsResult,
   HotelRegistrationResult,
@@ -10,9 +19,23 @@ import type {
   ListPlatformContentAuditResult,
   ListPlatformContentEntriesResult,
   ListPlatformSettingsAuditResult,
+  ListAdminOrdersPageCommand,
+  ListAdminOrdersPageResult,
   ProviderRegistrationResult,
+  RejectProviderServicePricingCommand,
+  RejectProviderServicePricingResult,
+  SubmitProviderServicePricingCommand,
+  SubmitProviderServicePricingResult,
+  MarkHotelInvoiceCollectedCommand,
+  MarkHotelInvoiceCollectedResult,
+  MarkProviderStatementPaidCommand,
+  MarkProviderStatementPaidResult,
+  UpdatePlatformServiceMatrixCommand,
+  UpdatePlatformServiceMatrixResult,
   UpdatePlatformContentEntryCommand,
   UpdatePlatformSettingsCommand,
+  UpsertPlatformProductCommand,
+  UpsertPlatformProductResult,
 } from "@/features/orders/application/contracts/platform-contracts";
 import type { WashoffPlatformRepository } from "@/features/orders/application/ports/washoff-platform-repository";
 import {
@@ -22,23 +45,35 @@ import {
   type ActivateAccountRequest,
   type ActivateAccountResponse,
   type AdminAccountsResponse,
+  type AdminFinanceDataResponse,
+  type AdminFinancePageResponse,
   type ApproveHotelRegistrationRequest,
   type ApproveProviderRegistrationRequest,
   type AutoReassignOrderRequest,
   type CreateHotelOrderRequest,
   type CurrentAccountSessionResponse,
   type ConfirmHotelOrderCompletionRequest,
+  type HotelBillingDataResponse,
   type IdentityAuditResponse,
+  type MarkHotelInvoiceCollectedRequest,
+  type MarkHotelInvoiceCollectedResponse,
+  type MarkProviderStatementPaidRequest,
+  type MarkProviderStatementPaidResponse,
   type PlatformContentAuditResponse,
   type PlatformContentEntriesResponse,
+  type PlatformServiceCatalogAdminResponse,
   type PlatformPageContentResponse,
   type PlatformRuntimeStatusResponse,
   type PlatformSettingsAuditResponse,
   type PlatformSettingsResponse,
+  type ProviderFinanceDataResponse,
+  type ProviderPricingAdminDataResponse,
+  type ProviderServiceManagementResponse,
   type ExpireAssignmentRequest,
   type LoginRequest,
   type LoginResponse,
   type OrdersQueryParams,
+  type AdminOrdersPageResponse,
   type ReactivateAccountRequest,
   type ResendActivationRequest,
   type ResendActivationResponse,
@@ -52,10 +87,18 @@ import {
   type ResetPasswordResponse,
   type RejectAssignmentRequest,
   type RejectHotelRegistrationRequest,
+  type RejectProviderServicePricingRequest,
+  type RejectProviderServicePricingResponse,
   type RejectProviderRegistrationRequest,
+  type SubmitProviderServicePricingRequest,
+  type SubmitProviderServicePricingResponse,
   type SuspendAccountRequest,
+  type UpdatePlatformServiceMatrixRequest,
+  type UpdatePlatformServiceMatrixResponse,
   type UpdatePlatformContentEntryRequest,
   type UpdatePlatformSettingsRequest,
+  type UpsertPlatformProductRequest,
+  type UpsertPlatformProductResponse,
   type ValidateActivationTokenRequest,
   type ValidateActivationTokenResponse,
   type ValidateResetPasswordTokenRequest,
@@ -107,15 +150,22 @@ const appendOptionalQueryParam = (path: string, key: string, value?: string) => 
   return `${path}?${searchParams.toString()}`;
 };
 
-const buildSessionHeaders = (sessionToken?: string) => {
-  if (!sessionToken) {
-    return undefined;
+const buildQueryPath = (
+  path: string,
+  params: Record<string, string | number | undefined>,
+) => {
+  const searchParams = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === "") {
+      continue;
+    }
+
+    searchParams.set(key, String(value));
   }
 
-  return {
-    Authorization: `Bearer ${sessionToken}`,
-    "x-washoff-session-token": sessionToken,
-  };
+  const queryString = searchParams.toString();
+  return queryString ? `${path}?${queryString}` : path;
 };
 
 const parseWashoffApiPayload = <ResponseValue,>(
@@ -144,6 +194,7 @@ export const createApiWashoffPlatformRepository = (
       response = await fetch(`${baseUrl}${path}`, {
         method: init?.method ?? "GET",
         cache: "no-store",
+        credentials: "include",
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
@@ -222,13 +273,10 @@ export const createApiWashoffPlatformRepository = (
       return session;
     },
 
-    logout: async (sessionToken?: string) => {
-      const activeSessionToken = sessionToken ?? getStoredClientSessionToken() ?? undefined;
-
+    logout: async (_sessionToken?: string) => {
       try {
         await request<void, Record<string, never>>("/auth/logout", {
           method: "POST",
-          headers: buildSessionHeaders(activeSessionToken),
           body: {},
         });
       } finally {
@@ -252,6 +300,43 @@ export const createApiWashoffPlatformRepository = (
 
     getPlatformSettings: () => request<PlatformSettingsResponse>("/admin/settings"),
 
+    getPlatformServiceCatalogAdminData: () =>
+      request<PlatformServiceCatalogAdminResponse>("/service-catalog/platform"),
+
+    getHotelBillingData: (hotelId?: string) =>
+      request<HotelBillingDataResponse>(
+        appendOptionalQueryParam("/hotel/billing", "hotelId", hotelId),
+      ),
+
+    getProviderServiceManagement: () =>
+      request<ProviderServiceManagementResponse>("/provider/services"),
+
+    getProviderFinanceData: (providerId?: string) =>
+      request<ProviderFinanceDataResponse>(
+        appendOptionalQueryParam("/provider/finance", "providerId", providerId),
+      ),
+
+    getProviderPricingAdminData: () =>
+      request<ProviderPricingAdminDataResponse>("/admin/provider-pricing"),
+
+    getAdminFinanceData: () => request<AdminFinanceDataResponse>("/admin/finance"),
+
+    getAdminFinancePage: (command: GetAdminFinancePageCommand) =>
+      request<AdminFinancePageResponse>(
+        buildQueryPath("/admin/finance/page", {
+          invoicePage: command.invoicePage,
+          invoicePageSize: command.invoicePageSize,
+          invoiceSearch: command.invoiceSearch,
+          invoiceStatus: command.invoiceStatus,
+          invoiceDate: command.invoiceDate,
+          statementPage: command.statementPage,
+          statementPageSize: command.statementPageSize,
+          statementSearch: command.statementSearch,
+          statementStatus: command.statementStatus,
+          statementDate: command.statementDate,
+        }),
+      ),
+
     listPlatformSettingsAudit: () =>
       request<PlatformSettingsAuditResponse>("/admin/settings/audit"),
 
@@ -263,6 +348,66 @@ export const createApiWashoffPlatformRepository = (
         method: "PATCH",
         body: command,
       }),
+
+    upsertPlatformProduct: (command: UpsertPlatformProductCommand) =>
+      request<UpsertPlatformProductResponse, UpsertPlatformProductRequest>("/admin/services/products", {
+        method: "POST",
+        body: command,
+      }),
+
+    updatePlatformServiceMatrix: (command: UpdatePlatformServiceMatrixCommand) =>
+      request<UpdatePlatformServiceMatrixResponse, UpdatePlatformServiceMatrixRequest>(
+        `/admin/services/matrix/${encodeURIComponent(command.matrixRowId)}`,
+        {
+          method: "PATCH",
+          body: command,
+        },
+      ),
+
+    submitProviderServicePricing: (command: SubmitProviderServicePricingCommand) =>
+      request<SubmitProviderServicePricingResponse, SubmitProviderServicePricingRequest>(
+        "/provider/services",
+        {
+          method: "POST",
+          body: command,
+        },
+      ),
+
+    approveProviderServicePricing: (offeringId: string) =>
+      request<ApproveProviderServicePricingResult, ApproveProviderServicePricingCommand>(
+        `/admin/provider-pricing/${encodeURIComponent(offeringId)}/approve`,
+        {
+          method: "POST",
+          body: { offeringId },
+        },
+      ),
+
+    rejectProviderServicePricing: (command: RejectProviderServicePricingCommand) =>
+      request<RejectProviderServicePricingResponse, RejectProviderServicePricingRequest>(
+        `/admin/provider-pricing/${encodeURIComponent(command.offeringId)}/reject`,
+        {
+          method: "POST",
+          body: command,
+        },
+      ),
+
+    markHotelInvoiceCollected: (command: MarkHotelInvoiceCollectedCommand) =>
+      request<MarkHotelInvoiceCollectedResponse, MarkHotelInvoiceCollectedRequest>(
+        `/admin/finance/invoices/${encodeURIComponent(command.invoiceId)}/collect`,
+        {
+          method: "POST",
+          body: command,
+        },
+      ),
+
+    markProviderStatementPaid: (command: MarkProviderStatementPaidCommand) =>
+      request<MarkProviderStatementPaidResponse, MarkProviderStatementPaidRequest>(
+        `/admin/finance/provider-statements/${encodeURIComponent(command.statementId)}/pay`,
+        {
+          method: "POST",
+          body: command,
+        },
+      ),
 
     listPlatformContentEntries: (pageKey?: string) =>
       request<PlatformContentEntriesResponse>(
@@ -356,6 +501,19 @@ export const createApiWashoffPlatformRepository = (
     listServiceCatalog: () => request<ServiceCatalogItem[]>("/service-catalog"),
 
     listAllOrders: () => request<LaundryOrder[]>(buildOrdersQuery({ scope: "all" })),
+
+    listAdminOrdersPage: (command: ListAdminOrdersPageCommand) =>
+      request<AdminOrdersPageResponse>(
+        buildQueryPath("/admin/orders", {
+          page: command.page,
+          pageSize: command.pageSize,
+          search: command.search,
+          status: command.status,
+          providerId: command.providerId,
+          dateFrom: command.dateFrom,
+          dateTo: command.dateTo,
+        }),
+      ),
 
     listHotelOrders: (hotelId?: string) =>
       request<LaundryOrder[]>(buildOrdersQuery({ scope: "hotel", hotelId })),

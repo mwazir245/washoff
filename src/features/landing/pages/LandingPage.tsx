@@ -1,8 +1,13 @@
 import { motion } from "framer-motion";
-import { ArrowLeft, Building2, CheckCircle2, Factory, WandSparkles } from "lucide-react";
-import { Link } from "react-router-dom";
+import { ArrowLeft, Building2, CheckCircle2, Factory } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
 import logo from "@/assets/logo.png";
 import { Button } from "@/components/ui/button";
+import {
+  resolveAccountHomeRoute,
+  useCurrentAccountSession,
+  useLogoutMutation,
+} from "@/features/auth/hooks/useAccountAuth";
 import { PlatformLanguageToggle } from "@/features/content/components/PlatformLanguageToggle";
 import { usePlatformPageContent } from "@/features/content/hooks/usePlatformContent";
 import { usePlatformLanguage } from "@/features/content/hooks/usePlatformLanguage";
@@ -10,14 +15,10 @@ import {
   landingBenefits,
   landingFooterGroups,
   landingHeaderLinks,
-  landingHeroFlow,
   landingHowItWorks,
-  landingOperationalValues,
   landingOverviewCards,
-  landingPlatformFeatures,
   landingPrimaryAction,
   landingSecondaryAction,
-  landingSmartSignals,
   landingTrustPoints,
 } from "@/features/landing/content/landing-content";
 import SectionHeader from "@/shared/components/layout/SectionHeader";
@@ -33,44 +34,52 @@ const sectionAnimation = {
 } as const;
 
 const LandingPage = () => {
+  const navigate = useNavigate();
   const { language } = usePlatformLanguage();
+  const sessionQuery = useCurrentAccountSession();
+  const logoutMutation = useLogoutMutation();
   const brandName = resolveWashoffBrandName(language);
   const brandText = (value: string) => localizeWashoffBrandText(value, language);
   const pageContent = usePlatformPageContent("landing");
-  const brandTagline = pageContent.getText("header", "brand_tagline", "منصة تشغيل ذكية لعمليات الغسيل");
+  const brandTagline = pageContent.getText(
+    "header",
+    "brand_tagline",
+    "منصة ذكية لإدارة وتشغيل خدمات الغسيل",
+  );
   const loginLabel = pageContent.getText("header", "login_button", "تسجيل الدخول");
   const primaryLabel = pageContent.getText("header", "primary_button", landingPrimaryAction.label);
-  const heroEyebrow = pageContent.getText("hero", "eyebrow", "منصة تشغيل عربية مخصصة لقطاع الضيافة");
+  const heroEyebrow = pageContent.getText(
+    "hero",
+    "eyebrow",
+    "تشغيل ذكي ومتكامل لإدارة عمليات الغسيل",
+  );
   const heroTitle = pageContent.getText(
     "hero",
     "title",
-    "شغّل خدمات الغسيل الفندقي بمنصة واحدة أكثر وضوحًا وانضباطًا",
+    "منصة ذكية لإدارة وتشغيل خدمات الغسيل للفنادق",
   );
   const heroHighlight = pageContent.getText(
     "hero",
     "highlight",
-    "الفندق يرسل الطلب فقط، والمنصة تسند التنفيذ تلقائيًا إلى أفضل مزود معتمد.",
+    "أرسل طلبك... ودع النظام يتولى اختيار أفضل مزود خدمة تلقائيًا وفق السعة والأداء والالتزام.",
   );
   const heroDescription = pageContent.getText(
     "hero",
     "description",
-    "WashOff تربط الفندق والمزود والإدارة ضمن رحلة تشغيلية واحدة: طلب واضح، مطابقة ذكية، إسناد تلقائي، متابعة تنفيذ، وشفافية مستمرة دون تنسيق يدوي مرهق.",
+    "واش أوف تمكّن الفنادق من إدارة عمليات الغسيل بسهولة ووضوح، بينما يقوم النظام بإسناد الطلبات تلقائيًا دون تدخل يدوي، مع متابعة دقيقة لكل مرحلة من مراحل التنفيذ.",
   );
-  const providerPrompt = pageContent.getText("hero", "provider_prompt", "هل تمثل مزود خدمة معتمدًا؟");
   const providerLink = pageContent.getText("hero", "provider_link", landingSecondaryAction.label);
-  const heroFlowTitle = pageContent.getText("hero", "flow_title", "من لحظة إنشاء الطلب حتى الإغلاق التشغيلي");
-  const noMarketplaceTitle = pageContent.getText("hero", "no_marketplace_title", "ليست سوق مزودين");
-  const noMarketplaceDescription = pageContent.getText(
+  const heroAutomationNote = pageContent.getText(
     "hero",
-    "no_marketplace_description",
-    "الفنادق لا تختار مزودًا يدويًا. المنصة تتولى قرار الإسناد تلقائيًا وفق السعة والالتزام والموقع وجودة الأداء.",
+    "automation_note",
+    "تشغيل ذكي بالكامل — دون الحاجة لاختيار مزود الخدمة يدويًا",
   );
   const trustEyebrow = pageContent.getText("trust", "eyebrow", "مصداقية وتشغيل");
-  const trustTitle = pageContent.getText("trust", "title", "تشغيل واضح يمكن الاعتماد عليه");
+  const trustTitle = pageContent.getText("trust", "title", "تشغيل موثوق وسهل القراءة");
   const trustDescription = pageContent.getText(
     "trust",
     "description",
-    "مصممة لفرق الضيافة والعمليات التي تحتاج إلى قرار أسرع، متابعة أوضح، وتنسيق أقل بين الأطراف.",
+    "مؤشرات تشغيل سريعة تشرح قيمة المنصة من أول نظرة.",
   );
   const howItWorksEyebrow = pageContent.getText("how_it_works", "eyebrow", "كيف تعمل المنصة");
   const howItWorksTitle = pageContent.getText("how_it_works", "title", `كيف تعمل ${brandName}؟`);
@@ -79,26 +88,79 @@ const LandingPage = () => {
     "description",
     "أربع خطوات واضحة تحوّل تشغيل خدمات الغسيل من تنسيق متكرر إلى مسار تشغيلي منظم وقابل للمتابعة.",
   );
-  const featuresEyebrow = pageContent.getText("features", "eyebrow", "التشغيل الذكي");
-  const featuresTitle = pageContent.getText("features", "title", "منصة تشغيل ذكية لا مجرد واجهة طلب");
-  const featuresDescription = pageContent.getText(
-    "features",
-    "description",
-    "WashOff لا تكتفي بإنشاء الطلبات، بل تدير قرار الإسناد والمتابعة وإدارة الاستثناءات ضمن منظومة تشغيلية متكاملة.",
-  );
   const overviewEyebrow = pageContent.getText("overview", "eyebrow", "نظرة على المنصة");
-  const overviewTitle = pageContent.getText("overview", "title", "ثلاث واجهات، قرار تشغيلي واحد");
+  const overviewTitle = pageContent.getText("overview", "title", "ثلاث واجهات بوضوح أكبر");
   const overviewDescription = pageContent.getText(
     "overview",
     "description",
-    "كل واجهة تخدم دورًا تشغيليًا محددًا، بينما يظل قرار الإسناد الذكي داخل المنصة لا بيد المستخدم النهائي.",
+    "عرض خفيف يوضح ما يراه كل طرف داخل المنصة من دون شرح ثقيل أو تفاصيل مشتتة.",
   );
-  const finalCtaTitle = pageContent.getText("final_cta", "title", "ابدأ تفعيل شبكة الغسيل لديك عبر منصة موحدة");
+  const finalCtaTitle = pageContent.getText("final_cta", "title", "ابدأ تشغيل خدمات الغسيل عبر منصة واحدة");
   const finalCtaDescription = pageContent.getText(
     "final_cta",
     "description",
-    "سجّل الجهة، دع الإدارة تعتمدها، ثم فعّل الحساب وابدأ تشغيل الطلبات من نفس المنصة بوضوح أكبر وثقة أعلى.",
+    "سجّل الجهة المناسبة، أكمل الاعتماد، ثم ابدأ التشغيل من نفس المنصة.",
   );
+  const handleLogout = async () => {
+    await logoutMutation.mutateAsync();
+    navigate(appRoutes.login, { replace: true });
+  };
+
+  const authenticatedRole = sessionQuery.data?.account.role;
+  const authenticatedHomeRoute = authenticatedRole
+    ? resolveAccountHomeRoute(authenticatedRole)
+    : appRoutes.login;
+
+  const renderHeaderActions = () => {
+    if (sessionQuery.isLoading && !sessionQuery.data) {
+      return (
+        <Button type="button" variant="outline" disabled>
+          {language === "en" ? "Checking..." : "جارٍ التحقق..."}
+        </Button>
+      );
+    }
+
+    if (sessionQuery.data?.account.role) {
+      return (
+        <>
+          <Button asChild variant="outline">
+            <Link to={resolveAccountHomeRoute(sessionQuery.data.account.role)}>
+              {sessionQuery.data.account.fullName}
+            </Link>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={logoutMutation.isPending}
+            onClick={() => void handleLogout()}
+          >
+            {logoutMutation.isPending
+              ? language === "en"
+                ? "Signing out..."
+                : "جارٍ تسجيل الخروج..."
+              : language === "en"
+                ? "Log out"
+                : "تسجيل الخروج"}
+          </Button>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <Button asChild variant="outline" className="hidden sm:inline-flex">
+          <Link to={appRoutes.login}>{loginLabel}</Link>
+        </Button>
+        <Button asChild>
+          <Link to={landingPrimaryAction.to}>
+            {primaryLabel}
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+        </Button>
+      </>
+    );
+  };
+
   return (
     <AppShell showNavbar={false}>
       <header id="top" className="fixed inset-x-0 top-0 z-50 px-4 pt-4 sm:px-6">
@@ -125,167 +187,116 @@ const LandingPage = () => {
 
             <div className="flex items-center gap-2 sm:gap-3">
               <PlatformLanguageToggle />
-              <Button asChild variant="outline" className="hidden sm:inline-flex">
-                <Link to={appRoutes.login}>{loginLabel}</Link>
-              </Button>
-              <Button asChild>
-                <Link to={landingPrimaryAction.to}>
-                  {primaryLabel}
-                  <ArrowLeft className="h-4 w-4" />
-                </Link>
-              </Button>
+              {renderHeaderActions()}
             </div>
           </div>
         </div>
       </header>
 
-      <main className="overflow-hidden pb-24 pt-32 sm:pt-36">
-        <section className="hero-band pb-12 pt-8 sm:pb-16 sm:pt-10">
+      <main className="overflow-hidden pb-16 pt-32 sm:pt-36">
+        <section className="hero-band pb-12 pt-8 sm:pb-14 sm:pt-10">
           <div className="page-shell">
-            <div className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:items-center">
-              <motion.div {...sectionAnimation} className="space-y-7">
+            <motion.div {...sectionAnimation} className="mx-auto max-w-5xl space-y-6">
+              <div className="space-y-5 text-center lg:text-right">
                 <span className="section-kicker">{heroEyebrow}</span>
 
-                <div className="space-y-5">
-                  <h1 className="max-w-4xl text-4xl font-bold leading-[1.18] text-foreground sm:text-5xl lg:text-6xl">
+                <div className="space-y-4">
+                  <h1 className="max-w-4xl text-4xl font-bold leading-[1.18] text-foreground sm:text-5xl lg:text-[3.7rem] lg:leading-[1.12]">
                     {heroTitle}
                   </h1>
-                  <p className="text-lg font-medium leading-8 text-primary">{heroHighlight}</p>
+                  <p className="max-w-3xl text-lg font-medium leading-8 text-primary">{heroHighlight}</p>
                   <p className="max-w-3xl text-base leading-8 text-muted-foreground sm:text-lg">
-                    {brandText(heroDescription)}
+                    {heroDescription}
                   </p>
                 </div>
 
-                <div className="landing-callout-card">
-                  <div className="flex items-start gap-3">
-                    <div className="landing-icon-badge h-11 w-11 shrink-0 rounded-2xl">
-                      <CheckCircle2 className="h-5 w-5" />
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-sm font-semibold text-foreground">{noMarketplaceTitle}</p>
-                      <p className="text-sm leading-7 text-muted-foreground">{noMarketplaceDescription}</p>
-                    </div>
-                  </div>
+                <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-primary/10 bg-white/80 px-4 py-3 text-sm text-foreground shadow-sm">
+                  <span className="landing-status-chip">إسناد تلقائي</span>
+                  <span className="font-medium">{heroAutomationNote}</span>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button asChild size="lg">
-                    <Link to={landingPrimaryAction.to}>
-                      {primaryLabel}
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap lg:justify-start">
+                  <Button asChild size="lg" className="w-full sm:w-auto">
+                    <Link to={authenticatedHomeRoute}>
+                      {authenticatedRole
+                        ? language === "en"
+                          ? "Go to your dashboard"
+                          : "الانتقال إلى لوحتك"
+                        : primaryLabel}
                       <ArrowLeft className="h-4 w-4" />
                     </Link>
                   </Button>
-                  <Button asChild size="lg" variant="outline">
-                    <Link to={landingSecondaryAction.href}>{providerLink}</Link>
-                  </Button>
+                  {authenticatedRole ? (
+                    <Button
+                      type="button"
+                      size="lg"
+                      variant="outline"
+                      className="w-full sm:w-auto"
+                      disabled={logoutMutation.isPending}
+                      onClick={() => void handleLogout()}
+                    >
+                      {logoutMutation.isPending
+                        ? language === "en"
+                          ? "Signing out..."
+                          : "جارٍ تسجيل الخروج..."
+                        : language === "en"
+                          ? "Log out"
+                          : "تسجيل الخروج"}
+                    </Button>
+                  ) : (
+                    <Button asChild size="lg" variant="outline" className="w-full sm:w-auto">
+                      <Link to={landingSecondaryAction.href}>{providerLink}</Link>
+                    </Button>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                  <span>{providerPrompt}</span>
                   <a href="#how-it-works" className="font-semibold text-primary hover:text-primary/80">
                     شاهد كيف تعمل المنصة
                   </a>
                   <span className="hidden sm:inline text-border">•</span>
-                  <Link to={appRoutes.login} className="font-semibold text-foreground hover:text-primary">
-                    {loginLabel}
+                  <Link to={authenticatedHomeRoute} className="font-semibold text-foreground hover:text-primary">
+                    {authenticatedRole ? sessionQuery.data.account.fullName : loginLabel}
                   </Link>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {landingSmartSignals.map((signal) => (
-                    <div key={signal.title} className="landing-outline-card p-4">
-                      <div className="landing-icon-badge h-10 w-10 rounded-xl">{signal.icon}</div>
-                      <p className="mt-4 text-sm font-semibold text-foreground">{signal.title}</p>
-                      <p className="mt-2 text-sm leading-7 text-muted-foreground">{signal.description}</p>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 24 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.55, delay: 0.08 }}
-                className="landing-premium-card space-y-6 p-6 sm:p-8"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="space-y-2">
-                    <span className="section-kicker">رؤية تشغيلية مختصرة</span>
-                    <h2 className="text-2xl font-bold text-foreground">{heroFlowTitle}</h2>
-                  </div>
-                  <div className="landing-icon-badge">
-                    <WandSparkles className="h-5 w-5" />
-                  </div>
-                </div>
-
-                <div className="landing-callout-card">
-                  <p className="text-sm font-semibold text-primary">إسناد تلقائي إلى أفضل مزود معتمد</p>
-                  <p className="mt-2 text-sm leading-7 text-muted-foreground">
-                    القرار التشغيلي في {brandName} لا يعتمد على تصفح الفنادق للمزودين، بل على محرك يختار الأنسب
-                    وفق السعة والجاهزية والالتزام.
-                  </p>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {landingHeroFlow.map((item) => (
-                    <div key={item.title} className="landing-stage-card">
-                      <div className="flex items-start gap-4">
-                        <span className="landing-stage-index">{item.badge}</span>
-                        <div className="space-y-1">
-                          <p className="font-semibold text-foreground">{item.title}</p>
-                          <p className="text-sm leading-7 text-muted-foreground">{item.description}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {landingTrustPoints.slice(0, 3).map((point) => (
-                    <div key={point.title} className="landing-outline-card p-4">
-                      <p className="text-sm font-semibold text-foreground">{point.title}</p>
-                      <p className="mt-2 text-sm leading-7 text-muted-foreground">{point.description}</p>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            </div>
-
-            <motion.div {...sectionAnimation} className="mt-8">
-              <div className="landing-panel p-5 sm:p-6">
-                <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
-                  <div className="space-y-3">
-                    <span className="section-kicker">{trustEyebrow}</span>
-                    <h2 className="text-2xl font-bold text-foreground">{trustTitle}</h2>
-                    <p className="text-sm leading-7 text-muted-foreground sm:text-base">{brandText(trustDescription)}</p>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    {landingTrustPoints.map((point) => (
-                      <div key={point.title} className="landing-outline-card p-4">
-                        <div className="landing-icon-badge h-10 w-10 rounded-xl">{point.icon}</div>
-                        <p className="mt-4 text-sm font-semibold text-foreground">{point.title}</p>
-                        <p className="mt-2 text-sm leading-7 text-muted-foreground">{point.description}</p>
-                      </div>
-                    ))}
-                  </div>
                 </div>
               </div>
             </motion.div>
           </div>
         </section>
 
-        <section id="how-it-works" className="py-20">
+        <section className="py-12">
+          <div className="page-shell">
+            <SectionHeader
+              eyebrow={trustEyebrow}
+              title={trustTitle}
+              description={brandText(trustDescription)}
+              className="mb-7"
+              centered
+            />
+
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {landingTrustPoints.map((point) => (
+                <motion.article key={point.title} {...sectionAnimation} className="landing-outline-card p-4 sm:p-5">
+                  <div className="landing-icon-badge h-10 w-10 rounded-xl">{point.icon}</div>
+                  <p className="mt-4 text-sm font-semibold text-foreground">{point.title}</p>
+                  <p className="mt-2 text-sm leading-7 text-muted-foreground">{point.description}</p>
+                </motion.article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="how-it-works" className="py-16">
           <div className="page-shell">
             <SectionHeader
               eyebrow={howItWorksEyebrow}
               title={howItWorksTitle}
               description={howItWorksDescription}
-              className="mb-10"
+              className="mb-8"
               centered
             />
 
-            <div className="grid gap-5 lg:grid-cols-4">
+            <div className="grid gap-4 lg:grid-cols-4">
               {landingHowItWorks.map((step) => (
                 <motion.article key={step.number} {...sectionAnimation} className="landing-premium-card p-6">
                   <div className="flex items-center justify-between gap-3">
@@ -302,8 +313,16 @@ const LandingPage = () => {
           </div>
         </section>
 
-        <section id="hotels" className="py-20">
+        <section id="hotels" className="py-16">
           <div className="page-shell">
+            <SectionHeader
+              eyebrow="الفوائد"
+              title="قيمة واضحة لكل طرف"
+              description="فوائد مباشرة ومختصرة للفنادق والمزوّدين داخل نفس المسار التشغيلي."
+              className="mb-8"
+              centered
+            />
+
             <div className="grid gap-6 lg:grid-cols-2">
               {landingBenefits.map((group, index) => (
                 <motion.article
@@ -324,11 +343,11 @@ const LandingPage = () => {
                     </div>
                   </div>
 
-                  <p className="mt-4 text-sm leading-8 text-muted-foreground sm:text-base">
+                  <p className="mt-4 text-sm leading-7 text-muted-foreground sm:text-base">
                     {brandText(group.description)}
                   </p>
 
-                  <div className="landing-list mt-6">
+                  <div className="landing-list mt-5">
                     {group.points.map((point) => (
                       <div key={point} className="landing-list-item bg-white/90">
                         <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
@@ -342,145 +361,63 @@ const LandingPage = () => {
           </div>
         </section>
 
-        <section id="platform-features" className="py-20">
+        <section id="platform-overview" className="py-16">
           <div className="page-shell">
-            <div className="landing-premium-card p-6 sm:p-8 lg:p-10">
-              <SectionHeader
-                eyebrow={featuresEyebrow}
-                title={featuresTitle}
-                description={brandText(featuresDescription)}
-                className="mb-8"
-              />
+            <SectionHeader
+              eyebrow={overviewEyebrow}
+              title={overviewTitle}
+              description={brandText(overviewDescription)}
+              className="mb-8"
+              centered
+            />
 
-              <div className="grid gap-5 xl:grid-cols-[0.88fr_1.12fr]">
-                <motion.div {...sectionAnimation} className="landing-callout-card h-full">
-                  <div className="landing-icon-badge">
-                    <WandSparkles className="h-5 w-5" />
+            <div className="grid gap-5 lg:grid-cols-3">
+              {landingOverviewCards.map((card, index) => (
+                <motion.article
+                  key={card.title}
+                  {...sectionAnimation}
+                  transition={{ duration: 0.45, delay: index * 0.06 }}
+                  className="landing-premium-card p-6"
+                >
+                  <div className="landing-icon-badge">{card.icon}</div>
+                  <h3 className="mt-5 text-xl font-bold text-foreground">{card.title}</h3>
+                  <p className="mt-3 text-sm leading-7 text-muted-foreground">{card.description}</p>
+
+                  <div className="landing-list mt-5">
+                    {card.points.map((point) => (
+                      <div key={point} className="landing-list-item">
+                        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                        <span className="leading-7 text-foreground">{point}</span>
+                      </div>
+                    ))}
                   </div>
-                  <h3 className="mt-5 text-2xl font-bold leading-tight text-foreground">
-                    {brandName} منصة تشغيل ذكية وليست مجرد واجهة لرفع الطلبات
-                  </h3>
-                  <p className="mt-4 text-sm leading-8 text-muted-foreground sm:text-base">
-                    عندما يُنشئ الفندق الطلب، تبدأ المنصة مباشرة في تقييم الجاهزية التشغيلية داخل الشبكة، ثم
-                    تتخذ قرار الإسناد وتواصل المتابعة حتى الإغلاق. هذا ما يجعل التجربة أوضح وأكثر قابلية للضبط من
-                    أي نموذج يعتمد على التنسيق اليدوي بين الأطراف.
-                  </p>
-                </motion.div>
-
-                <div className="grid gap-5 md:grid-cols-2">
-                  {landingPlatformFeatures.map((feature) => (
-                    <motion.article key={feature.title} {...sectionAnimation} className="landing-outline-card p-6">
-                      <div className="landing-icon-badge">{feature.icon}</div>
-                      <h3 className="mt-5 text-lg font-bold text-foreground">{feature.title}</h3>
-                      <p className="mt-3 text-sm leading-7 text-muted-foreground">{feature.description}</p>
-                    </motion.article>
-                  ))}
-                </div>
-              </div>
+                </motion.article>
+              ))}
             </div>
           </div>
         </section>
 
-        <section id="platform-overview" className="py-20">
-          <div className="page-shell">
-            <div className="landing-panel p-6 sm:p-8">
-              <SectionHeader
-                eyebrow={overviewEyebrow}
-                title={overviewTitle}
-                description={brandText(overviewDescription)}
-                className="mb-8"
-                centered
-              />
-
-              <div className="grid gap-5 lg:grid-cols-3">
-                {landingOverviewCards.map((card, index) => (
-                  <motion.article
-                    key={card.title}
-                    {...sectionAnimation}
-                    transition={{ duration: 0.45, delay: index * 0.06 }}
-                    className="landing-premium-card p-6"
-                  >
-                    <div className="landing-icon-badge">{card.icon}</div>
-                    <h3 className="mt-5 text-xl font-bold text-foreground">{card.title}</h3>
-                    <p className="mt-3 text-sm leading-7 text-muted-foreground">{card.description}</p>
-
-                    <div className="landing-list mt-5">
-                      {card.points.map((point) => (
-                        <div key={point} className="landing-list-item">
-                          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-                          <span className="leading-7 text-foreground">{point}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.article>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="operational-value" className="py-20">
-          <div className="page-shell">
-            <div className="grid gap-6 lg:grid-cols-[0.92fr_1.08fr] lg:items-start">
-              <motion.div {...sectionAnimation} className="landing-premium-card p-6 sm:p-8">
-                <span className="section-kicker">قيمة تشغيلية</span>
-                <h2 className="mt-4 text-3xl font-bold leading-tight text-foreground">نتائج تشغيلية مقنعة دون ادعاءات رقمية مبالغ فيها</h2>
-                <p className="mt-4 text-sm leading-8 text-muted-foreground sm:text-base">
-                  القيمة التي تقدمها المنصة تظهر في وضوح القرار، انخفاض الاعتماد على التنسيق اليدوي، وتحسن القدرة
-                  على متابعة الحالات والاستثناءات عبر شبكة تشغيل واحدة.
-                </p>
-              </motion.div>
-
-              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                {landingOperationalValues.map((value) => (
-                  <motion.article key={value.title} {...sectionAnimation} className="landing-outline-card p-5">
-                    <p className="text-sm font-semibold text-foreground">{value.title}</p>
-                    <p className="mt-3 text-sm leading-7 text-muted-foreground">{value.description}</p>
-                  </motion.article>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="final-cta" className="py-20">
+        <section id="final-cta" className="py-16">
           <div className="page-shell">
             <div className="landing-cta-panel">
-              <div className="grid gap-6 lg:grid-cols-[1.08fr_0.92fr] lg:items-center">
+              <div className="grid gap-6 lg:grid-cols-[1.12fr_0.88fr] lg:items-center">
                 <div className="space-y-4">
-                  <span className="section-kicker">انطلق الآن</span>
+                  <span className="section-kicker">ابدأ مع {brandName}</span>
                   <h2 className="text-3xl font-bold leading-tight text-foreground">{finalCtaTitle}</h2>
                   <p className="max-w-3xl text-sm leading-8 text-muted-foreground sm:text-base">
                     {brandText(finalCtaDescription)}
                   </p>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="landing-outline-card p-4">
-                      <p className="text-sm font-semibold text-foreground">اعتماد إداري واضح</p>
-                      <p className="mt-2 text-sm leading-7 text-muted-foreground">الفنادق والمزودون يمرون عبر دورة اعتماد قبل الدخول التشغيلي.</p>
-                    </div>
-                    <div className="landing-outline-card p-4">
-                      <p className="text-sm font-semibold text-foreground">تشغيل موحد</p>
-                      <p className="mt-2 text-sm leading-7 text-muted-foreground">طلب، إسناد، تنفيذ، ومتابعة داخل منظومة واحدة واضحة.</p>
-                    </div>
-                    <div className="landing-outline-card p-4">
-                      <p className="text-sm font-semibold text-foreground">جاهزية للعروض والـ pilot</p>
-                      <p className="mt-2 text-sm leading-7 text-muted-foreground">واجهة أوضح لعرض القيمة التشغيلية على أصحاب القرار والفرق التنفيذية.</p>
-                    </div>
-                  </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3 lg:justify-end">
-                  <Button asChild size="lg">
+                <div className="flex flex-col gap-3 lg:items-end">
+                  <Button asChild size="lg" className="w-full sm:w-auto">
                     <Link to={landingPrimaryAction.to}>
                       {primaryLabel}
                       <ArrowLeft className="h-4 w-4" />
                     </Link>
                   </Button>
-                  <Button asChild size="lg" variant="outline">
+                  <Button asChild size="lg" variant="outline" className="w-full sm:w-auto">
                     <Link to={appRoutes.providerRegistration}>{providerLink}</Link>
-                  </Button>
-                  <Button asChild size="lg" variant="ghost" className="w-full sm:w-auto">
-                    <a href="#contact">تواصل معنا</a>
                   </Button>
                 </div>
               </div>

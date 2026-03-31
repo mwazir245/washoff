@@ -2,7 +2,6 @@ import type { AccountRole } from "@/features/auth/model";
 import {
   clearClientSession,
   getStoredClientAccount,
-  getStoredClientSessionToken,
   storeClientSession,
 } from "@/features/auth/infrastructure/client-auth-storage";
 import type { AuthenticatedAccountSession } from "@/features/auth/model";
@@ -52,7 +51,9 @@ const readClientOverride = (): Partial<WashoffClientAuthContext> => {
   }
 };
 
-export const writeAuthenticatedClientSession = (session: AuthenticatedAccountSession) => {
+export const writeAuthenticatedClientSession = (
+  session: Pick<AuthenticatedAccountSession, "account" | "session"> & { token?: string },
+) => {
   storeClientSession(session);
 };
 
@@ -126,15 +127,6 @@ export const resolveWashoffClientAuthContext = (): WashoffClientAuthContext | nu
 };
 
 export const buildWashoffApiAuthHeaders = (): Record<string, string> => {
-  const sessionToken = getStoredClientSessionToken();
-
-  if (sessionToken) {
-    return {
-      Authorization: `Bearer ${sessionToken}`,
-      "x-washoff-session-token": sessionToken,
-    };
-  }
-
   const context = resolveWashoffClientAuthContext();
 
   if (!context) {

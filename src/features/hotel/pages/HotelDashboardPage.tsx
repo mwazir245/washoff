@@ -1,91 +1,190 @@
-import { useState } from "react";
-import { ArrowLeftRight, CheckCircle, Clock3, DollarSign, Package, Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CalendarDays, CheckCircle2, Clock3, Package, Search, Truck } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import HotelOrderDetailsDrawer from "@/features/hotel/components/HotelOrderDetailsDrawer";
 import HotelOrderForm from "@/features/hotel/components/HotelOrderForm";
-import OrderSubmissionNotice from "@/features/hotel/components/OrderSubmissionNotice";
 import {
   useConfirmHotelOrderCompletionMutation,
   useCreateHotelOrderMutation,
   useHotelDashboard,
 } from "@/features/hotel/hooks/useHotelDashboard";
-import OrderExecutionTimeline from "@/features/orders/components/OrderExecutionTimeline";
 import OrderStatusBadge from "@/features/orders/components/OrderStatusBadge";
-import { MatchingDecision, OrderStatus } from "@/features/orders/model";
+import { OrderStatus } from "@/features/orders/model";
 import { getOrderQuantityTotal, type LaundryOrder } from "@/features/orders/model/order";
+import { getOrderStatusMeta } from "@/features/orders/model/order-status";
+import { toast } from "@/hooks/use-toast";
+import DataTable, { type DataTableColumn } from "@/shared/components/data-display/DataTable";
+import FiltersBar from "@/shared/components/data-display/FiltersBar";
+import PaginationBar from "@/shared/components/data-display/PaginationBar";
 import EmptyState from "@/shared/components/feedback/EmptyState";
 import PreviewModeNotice from "@/shared/components/feedback/PreviewModeNotice";
-import SectionHeader from "@/shared/components/layout/SectionHeader";
-import MetricCard from "@/shared/components/metrics/MetricCard";
+import { appRoutes } from "@/shared/config/navigation";
 import { DashboardLayout } from "@/shared/layout/DashboardLayout";
-import { formatDateLabel, formatDateTimeLabel, formatSar } from "@/shared/lib/formatters";
-import { toast } from "@/hooks/use-toast";
+import { formatDateTimeLabel } from "@/shared/lib/formatters";
 
-const metricIcons = [Package, Clock3, CheckCircle, DollarSign] as const;
-const trackedExecutionStatuses = new Set([
+const PAGE_SIZE = 12;
+
+const providerPickupPendingStatuses = new Set([OrderStatus.Accepted, OrderStatus.PickupScheduled]);
+const inExecutionStatuses = new Set([
   OrderStatus.Accepted,
   OrderStatus.PickupScheduled,
   OrderStatus.PickedUp,
   OrderStatus.InProcessing,
   OrderStatus.QualityCheck,
   OrderStatus.OutForDelivery,
-  OrderStatus.Delivered,
-  OrderStatus.Completed,
 ]);
 
-const getOrderProviderSummary = (order: LaundryOrder) => {
-  const latestReassignmentEvent = order.reassignmentEvents.slice(-1)[0];
+const isToday = (value: string) => {
+  const currentDate = new Date();
+  const candidateDate = new Date(value);
 
-  if (order.providerSnapshot) {
-    return {
-      primary: order.providerSnapshot.displayName.ar,
-      secondary:
-        (order.activeAssignment?.attemptNumber ?? 1) > 1
-          ? `أعيد إسناد الطلب في المحاولة ${order.activeAssignment?.attemptNumber} وبانتظار رد المزوّد حتى ${
-              order.activeAssignment?.responseDueAt ? formatDateTimeLabel(order.activeAssignment.responseDueAt) : "الآن"
-            }`
-          : order.activeAssignment?.responseDueAt
-            ? `بانتظار رد المزوّد حتى ${formatDateTimeLabel(order.activeAssignment.responseDueAt)}`
-            : undefined,
-    };
-  }
-
-  const blockingReasons = Array.from(
-    new Set(
-      order.matchingLogs.flatMap((log) =>
-        log.decision === MatchingDecision.Skipped ? log.eligibilityResult.blockingReasonsAr : [],
-      ),
-    ),
+  return (
+    currentDate.getFullYear() === candidateDate.getFullYear() &&
+    currentDate.getMonth() === candidateDate.getMonth() &&
+    currentDate.getDate() === candidateDate.getDate()
   );
-
-  if (order.status === OrderStatus.AutoMatching && blockingReasons.length > 0) {
-    return {
-      primary: "قيد المطابقة التشغيلية",
-      secondary: blockingReasons[0],
-    };
-  }
-
-  if (order.status === OrderStatus.PendingCapacity || order.status === OrderStatus.Reassigned) {
-    return {
-      primary: "بانتظار توفر مزود مؤهل",
-      secondary:
-        latestReassignmentEvent?.notesAr ??
-        "تعذر تثبيت مزود بديل حتى الآن، ويستمر الطلب في قائمة الانتظار التشغيلية.",
-    };
-  }
-
-  return {
-    primary: "قيد المطابقة التلقائية",
-    secondary: undefined,
-  };
 };
+
+const kpiCards = [
+  {
+    key: "today",
+    title: "الطلبات اليوم",
+    icon: Package,
+  },
+  {
+    key: "execution",
+    title: "قيد التنفيذ",
+    icon: Clock3,
+  },
+  {
+    key: "pickupPending",
+    title: "بانتظار الاستلام من المزود",
+    icon: Truck,
+  },
+  {
+    key: "delivered",
+    title: "تم التسليم",
+    icon: CheckCircle2,
+  },
+  {
+    key: "completed",
+    title: "المكتمل",
+    icon: CheckCircle2,
+  },
+] as const;
+
+const resolveExecutionStageLabel = (order: LaundryOrder) => {
+  switch (order.status) {
+    case OrderStatus.Submitted:
+      return "تم إنشاء الطلب";
+    case OrderStatus.AutoMatching:
+      return "قيد المطابقة";
+    case OrderStatus.Assigned:
+      return "تم الإسناد";
+    default:
+      return getOrderStatusMeta(order.status).label;
+  }
+};
+
+const buildProviderOptions = (orders: LaundryOrder[]) => {
+  const providerMap = new Map<string, string>();
+
+  orders.forEach((order) => {
+    if (order.providerId && order.providerSnapshot?.displayName.ar) {
+      providerMap.set(order.providerId, order.providerSnapshot.displayName.ar);
+    }
+  });
+
+  return Array.from(providerMap.entries())
+    .map(([id, label]) => ({ id, label }))
+    .sort((left, right) => left.label.localeCompare(right.label, "ar"));
+};
+
+const createHotelOrderPayload = (input: {
+  roomNumber: string;
+  items: Array<{ serviceId: string; quantity: number }>;
+  pickupAt: string;
+  notes: string;
+}) => ({
+  roomNumber: input.roomNumber,
+  items: input.items,
+  pickupAt: input.pickupAt,
+  notes: input.notes,
+});
 
 const HotelDashboardPage = () => {
   const dashboardQuery = useHotelDashboard();
   const createOrderMutation = useCreateHotelOrderMutation();
   const confirmCompletionMutation = useConfirmHotelOrderCompletionMutation();
   const [showNewOrderForm, setShowNewOrderForm] = useState(false);
-  const [recentlySubmittedOrder, setRecentlySubmittedOrder] = useState<LaundryOrder | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [providerFilter, setProviderFilter] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedOrder, setSelectedOrder] = useState<LaundryOrder | undefined>();
   const [completionOrderId, setCompletionOrderId] = useState<string | null>(null);
+  const dashboardData = dashboardQuery.data;
+  const recentOrders = useMemo(() => dashboardData?.recentOrders ?? [], [dashboardData?.recentOrders]);
+  const serviceCatalog = useMemo(
+    () => dashboardData?.serviceCatalog ?? [],
+    [dashboardData?.serviceCatalog],
+  );
+
+  const providerOptions = useMemo(() => buildProviderOptions(recentOrders), [recentOrders]);
+
+  const filteredOrders = useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+
+    return recentOrders.filter((order) => {
+      const matchesSearch =
+        normalizedSearch.length === 0
+          ? true
+          : [
+              order.id,
+              order.roomNumber ?? "",
+              order.providerSnapshot?.displayName.ar ?? "",
+              ...order.items.map((item) => item.serviceName.ar),
+            ]
+              .join(" ")
+              .toLowerCase()
+              .includes(normalizedSearch);
+
+      const matchesStatus = statusFilter === "all" ? true : order.status === statusFilter;
+      const matchesProvider = providerFilter === "all" ? true : order.providerId === providerFilter;
+      const orderDate = order.createdAt.slice(0, 10);
+      const matchesDateFrom = dateFrom ? orderDate >= dateFrom : true;
+      const matchesDateTo = dateTo ? orderDate <= dateTo : true;
+
+      return matchesSearch && matchesStatus && matchesProvider && matchesDateFrom && matchesDateTo;
+    });
+  }, [dateFrom, dateTo, providerFilter, recentOrders, searchQuery, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
+  const paginatedOrders = useMemo(
+    () => filteredOrders.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [currentPage, filteredOrders],
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [dateFrom, dateTo, providerFilter, searchQuery, statusFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   if (dashboardQuery.isError) {
     return (
@@ -105,63 +204,60 @@ const HotelDashboardPage = () => {
 
   if (dashboardQuery.isLoading || !dashboardQuery.data) {
     return (
-      <DashboardLayout
-        title="لوحة الفندق"
-        subtitle="جارٍ تحميل البيانات التشغيلية الخاصة بالفندق."
-        eyebrow="واجهة الفندق"
-      >
+      <DashboardLayout title="لوحة الفندق" subtitle="جارٍ تحميل البيانات التشغيلية الخاصة بالفندق." eyebrow="واجهة الفندق">
         <div className="surface-card px-6 py-6 text-sm text-muted-foreground">
-          يتم تجهيز بيانات الفندق وربطها بلوحة المؤشرات الحالية.
+          يتم تجهيز لوحة الفندق وربطها بالطلبات التشغيلية الحالية.
         </div>
       </DashboardLayout>
     );
   }
 
-  const { city, hotelName, metrics, recentOrders, serviceCatalog } = dashboardQuery.data;
-  const displayedRecentOrder = recentlySubmittedOrder
-    ? recentOrders.find((order) => order.id === recentlySubmittedOrder.id) ?? recentlySubmittedOrder
-    : null;
+  const { city, hotelName } = dashboardData;
 
-  const executionOrders = recentOrders.filter((order) => trackedExecutionStatuses.has(order.status)).slice(0, 4);
-
-  const assignedOrdersCount = recentOrders.filter((order) => Boolean(order.providerId)).length;
-  const unresolvedOrdersCount = recentOrders.filter(
-    (order) => order.status === OrderStatus.PendingCapacity || order.status === OrderStatus.AutoMatching,
-  ).length;
-
-  const handleOpenOrderForm = () => {
-    createOrderMutation.reset();
-    setShowNewOrderForm(true);
+  const hotelKpis = {
+    today: recentOrders.filter((order) => isToday(order.createdAt)).length,
+    execution: recentOrders.filter((order) => inExecutionStatuses.has(order.status)).length,
+    pickupPending: recentOrders.filter((order) => providerPickupPendingStatuses.has(order.status)).length,
+    delivered: recentOrders.filter((order) => order.status === OrderStatus.Delivered).length,
+    completed: recentOrders.filter((order) => order.status === OrderStatus.Completed).length,
   };
 
-  const handleCloseOrderForm = () => {
-    createOrderMutation.reset();
-    setShowNewOrderForm(false);
+  const resetFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("all");
+    setProviderFilter("all");
+    setDateFrom("");
+    setDateTo("");
   };
 
   const handleOrderSubmit = async (input: {
-    serviceIds: string[];
-    itemCount: number;
+    roomNumber: string;
+    items: Array<{ serviceId: string; quantity: number }>;
     pickupAt: string;
     notes: string;
   }) => {
-    const newOrder = await createOrderMutation.mutateAsync(input);
-    setRecentlySubmittedOrder(newOrder);
+    const order = await createOrderMutation.mutateAsync(createHotelOrderPayload(input));
     setShowNewOrderForm(false);
+    setSelectedOrder(order);
+    toast({
+      title: "تم إنشاء الطلب",
+      description: "سجل النظام الطلب وبدأ الإسناد التشغيلي التلقائي مباشرة.",
+    });
   };
 
   const handleConfirmCompletion = async (orderId: string) => {
     try {
       setCompletionOrderId(orderId);
-      await confirmCompletionMutation.mutateAsync(orderId);
+      const completedOrder = await confirmCompletionMutation.mutateAsync(orderId);
+      setSelectedOrder(completedOrder);
       toast({
-        title: "تم تأكيد اكتمال الطلب",
-        description: "أُغلق الطلب نهائيًا بعد تأكيد الفندق لوصول الخدمة واكتمال التنفيذ.",
+        title: "تم اعتماد اكتمال الطلب",
+        description: "تم تأكيد استلام الفندق للطلب وإغلاقه بعد تسليمه للنزيل.",
       });
     } catch (error) {
       toast({
-        title: "تعذر تأكيد اكتمال الطلب",
-        description: error instanceof Error ? error.message : "تعذر تحديث الطلب إلى حالة مكتمل حاليًا.",
+        title: "تعذر اعتماد اكتمال الطلب",
+        description: error instanceof Error ? error.message : "تعذر تحديث حالة الطلب حاليًا.",
         variant: "destructive",
       });
     } finally {
@@ -169,227 +265,255 @@ const HotelDashboardPage = () => {
     }
   };
 
+  const columns: DataTableColumn<LaundryOrder>[] = [
+    {
+      key: "order",
+      header: "رقم الطلب",
+      cell: (order) => (
+        <div className="space-y-1">
+          <p className="font-semibold text-foreground">{order.id}</p>
+          <p className="text-xs leading-6 text-muted-foreground">{getOrderQuantityTotal(order)} قطعة</p>
+        </div>
+      ),
+    },
+    {
+      key: "room",
+      header: "رقم الغرفة",
+      cellClassName: "whitespace-nowrap",
+      cell: (order) => <span className="font-semibold text-foreground">{order.roomNumber ?? "غير محدد"}</span>,
+    },
+    {
+      key: "status",
+      header: "الحالة",
+      cell: (order) => <OrderStatusBadge status={order.status} />,
+    },
+    {
+      key: "provider",
+      header: "المزوّد",
+      cell: (order) => (
+        <div className="space-y-1">
+          <p className="font-semibold text-foreground">{order.providerSnapshot?.displayName.ar ?? "بانتظار الإسناد"}</p>
+          <p className="text-xs leading-6 text-muted-foreground">{order.providerSnapshot?.city ?? "—"}</p>
+        </div>
+      ),
+    },
+    {
+      key: "created",
+      header: "وقت الإنشاء",
+      cellClassName: "whitespace-nowrap text-sm text-muted-foreground",
+      cell: (order) => formatDateTimeLabel(order.createdAt),
+    },
+    {
+      key: "execution",
+      header: "المرحلة التنفيذية",
+      cell: (order) => (
+        <div className="space-y-1">
+          <p className="font-semibold text-foreground">{resolveExecutionStageLabel(order)}</p>
+          <p className="text-xs leading-6 text-muted-foreground">{order.progressPercent ?? 0}% تقدم</p>
+        </div>
+      ),
+    },
+    {
+      key: "updated",
+      header: "آخر تحديث",
+      cellClassName: "whitespace-nowrap text-sm text-muted-foreground",
+      cell: (order) => formatDateTimeLabel(order.updatedAt),
+    },
+    {
+      key: "action",
+      header: "الإجراء",
+      cellClassName: "whitespace-nowrap",
+      cell: (order) =>
+        order.status === OrderStatus.Delivered ? (
+          <Button
+            size="sm"
+            disabled={completionOrderId === order.id}
+            onClick={(event) => {
+              event.stopPropagation();
+              void handleConfirmCompletion(order.id);
+            }}
+          >
+            تم التسليم للنزيل
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={(event) => {
+              event.stopPropagation();
+              setSelectedOrder(order);
+            }}
+          >
+            عرض التفاصيل
+          </Button>
+        ),
+    },
+  ];
+
   return (
     <DashboardLayout
       title="لوحة الفندق"
       subtitle={`${hotelName} - ${city}`}
       eyebrow="واجهة الفندق"
       actions={
-        <Button onClick={() => (showNewOrderForm ? handleCloseOrderForm() : handleOpenOrderForm())}>
-          <Plus className="h-4 w-4" />
-          {showNewOrderForm ? "إغلاق النموذج" : "طلب جديد"}
-        </Button>
+        <>
+          <Button asChild variant="outline">
+            <Link to={appRoutes.hotelBilling}>الفواتير</Link>
+          </Button>
+          <Button onClick={() => setShowNewOrderForm((current) => !current)}>
+            {showNewOrderForm ? "إغلاق نموذج الطلب" : "إدخال طلب جديد"}
+          </Button>
+        </>
       }
     >
-      <PreviewModeNotice description="تعرض هذه الواجهة دورة الطلب الكاملة من الإنشاء وحتى التنفيذ النهائي والتأكيد. لا يزال الإسناد يتم تلقائيًا بالكامل من دون أي اختيار يدوي للمزوّد." />
+      <PreviewModeNotice description="واجهة الفندق أصبحت تشغيلية ومركزة على إدخال الطلبات، تتبع التنفيذ، واستلام الطلبات المكتملة من المزوّد دون أي تفاصيل مطابقة أو مراقبة إدارية." />
 
-      <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-        <div className="surface-card overflow-hidden">
-          <div className="hero-band px-6 py-7 text-foreground sm:px-8">
-            <p className="text-sm font-semibold tracking-[0.14em] text-primary/70">مركز طلبات الفندق</p>
-            <h2 className="mt-3 text-3xl font-bold">أنشئ الطلب، تابع الإسناد، وراقب التنفيذ حتى الاكتمال</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-              يدير النظام التخصيص تلقائيًا وفق قواعد الأهلية والسعة، بينما تمنحك اللوحة رؤية واضحة لحالة التنفيذ والخطوة
-              الحالية حتى التسليم النهائي.
-            </p>
-          </div>
-          <div className="grid gap-4 px-6 py-6 sm:grid-cols-3 sm:px-8">
-            <div className="hero-stat-card">
-              <p className="text-xs font-semibold tracking-[0.1em] text-muted-foreground">إجمالي الطلبات الحديثة</p>
-              <p className="mt-2 text-2xl font-bold text-foreground">{recentOrders.length}</p>
-            </div>
-            <div className="hero-stat-card">
-              <p className="text-xs font-semibold tracking-[0.1em] text-muted-foreground">طلبات مع مزود معيّن</p>
-              <p className="mt-2 text-2xl font-bold text-foreground">{assignedOrdersCount}</p>
-            </div>
-            <div className="hero-stat-card">
-              <p className="text-xs font-semibold tracking-[0.1em] text-muted-foreground">طلبات غير محسومة</p>
-              <p className="mt-2 text-2xl font-bold text-foreground">{unresolvedOrdersCount}</p>
-            </div>
-          </div>
-        </div>
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        {kpiCards.map((metric) => {
+          const Icon = metric.icon;
+          const value = hotelKpis[metric.key];
 
-        <div className="surface-card px-6 py-6 sm:px-8">
-          <SectionHeader
-            eyebrow="تجربة الاستخدام"
-            title="رحلة الطلب أوضح وأكثر مباشرة"
-            description="أنشئ طلبًا جديدًا أو تابع آخر نتيجة إسناد، ثم راقب التدرج التنفيذي حتى التأكيد النهائي."
-          />
-          <div className="mt-5 space-y-4 text-sm leading-7 text-muted-foreground">
-            <div className="accent-panel px-4 py-4">
-              تظهر النتيجة مباشرة بعد الإرسال: مزود معيّن، مهلة الرد، أو حالة انتظار السعة مع أسباب التعذر.
+          return (
+            <div key={metric.key} className="surface-card px-5 py-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold tracking-[0.08em] text-muted-foreground">{metric.title}</p>
+                  <p className="text-2xl font-bold text-foreground">{value}</p>
+                </div>
+                <div className="rounded-full bg-primary/10 p-3 text-primary">
+                  <Icon className="h-5 w-5" />
+                </div>
+              </div>
             </div>
-            <div className="info-panel px-4 py-4">
-              بعد قبول المزوّد يتحول الطلب إلى مسار تنفيذي واضح يتيح للفندق متابعة كل مرحلة حتى التسليم ثم التأكيد النهائي.
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="metric-grid">
-        {metrics.map((metric, index) => {
-          const Icon = metricIcons[index];
-          const value = metric.title === "متوسط الطلب" ? formatSar(Number(metric.value)) : metric.value;
-
-          return <MetricCard key={metric.title} title={metric.title} value={value} icon={<Icon className="h-6 w-6" />} />;
+          );
         })}
       </section>
 
-      {displayedRecentOrder ? <OrderSubmissionNotice order={displayedRecentOrder} /> : null}
-
       {showNewOrderForm ? (
-        <section>
-          <HotelOrderForm
-            services={serviceCatalog}
-            isSubmitting={createOrderMutation.isPending}
-            errorMessage={createOrderMutation.error instanceof Error ? createOrderMutation.error.message : undefined}
-            onCancel={handleCloseOrderForm}
-            onSubmit={handleOrderSubmit}
-          />
-        </section>
+        <HotelOrderForm
+          services={serviceCatalog}
+          isSubmitting={createOrderMutation.isPending}
+          errorMessage={createOrderMutation.error instanceof Error ? createOrderMutation.error.message : undefined}
+          onCancel={() => setShowNewOrderForm(false)}
+          onSubmit={handleOrderSubmit}
+        />
       ) : null}
 
-      <section className="surface-card overflow-hidden">
-        <div className="border-b border-border/70 px-6 py-5 sm:px-8">
-          <SectionHeader
-            eyebrow="متابعة التنفيذ"
-            title="الطلبات الجاري تنفيذها"
-            description="تمنح هذه المساحة فريق الفندق رؤية فورية لحالة التنفيذ الحالية، والخطوات المكتملة، ومتى يمكن تأكيد إغلاق الطلب."
-          />
-        </div>
-
-        {executionOrders.length > 0 ? (
-          <div className="divide-y divide-border/70">
-            {executionOrders.map((order) => (
-              <div key={order.id} className="grid gap-4 px-6 py-5 sm:px-8">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-lg font-semibold text-foreground">{order.id}</p>
-                      <OrderStatusBadge status={order.status} />
-                    </div>
-                    <div className="flex flex-wrap gap-5 text-sm text-muted-foreground">
-                      <span>{order.providerSnapshot?.displayName.ar ?? "بانتظار مزود"}</span>
-                      <span>{`${order.progressPercent ?? 0}% نسبة التقدم`}</span>
-                    </div>
-                  </div>
-
-                  {order.status === OrderStatus.Delivered ? (
-                    <Button
-                      disabled={completionOrderId === order.id}
-                      onClick={() => void handleConfirmCompletion(order.id)}
-                    >
-                      تأكيد اكتمال الطلب
-                    </Button>
-                  ) : (
-                    <div className="info-panel px-3 py-3 text-xs leading-6 text-muted-foreground">
-                      {order.status === OrderStatus.Completed
-                        ? "أغلق هذا الطلب نهائيًا وتم اعتماده كمكتمل."
-                        : "يتم تحديث هذه البطاقة تلقائيًا مع تقدم المزوّد في التنفيذ."}
-                    </div>
-                  )}
-                </div>
-
-                <OrderExecutionTimeline order={order} />
-              </div>
-            ))}
+      <FiltersBar
+        title="إدارة الطلبات"
+        description="ابحث في الطلبات حسب رقم الطلب أو رقم الغرفة أو المزوّد، ثم صفِّ النتائج حسب الحالة أو تاريخ الإنشاء."
+        summary={`${filteredOrders.length} طلبًا مطابقًا للفلاتر الحالية`}
+        actions={
+          <div className="flex flex-wrap gap-3">
+            <Button type="button" variant="outline" onClick={resetFilters}>
+              مسح الفلاتر
+            </Button>
+            <Button type="button" onClick={() => setShowNewOrderForm(true)}>
+              إدخال طلب جديد
+            </Button>
           </div>
-        ) : (
-          <div className="px-6 py-8 sm:px-8">
-            <EmptyState
-              title="لا توجد طلبات تنفيذية حاليًا"
-              description="ستظهر هنا الطلبات التي تجاوزت مرحلة الإسناد ودخلت فعليًا في دورة التنفيذ حتى التسليم."
+        }
+      >
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">البحث</label>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              className="ps-10"
+              placeholder="رقم الطلب أو رقم الغرفة أو المزوّد"
             />
           </div>
-        )}
-      </section>
-
-      <section className="surface-card overflow-hidden">
-        <div className="border-b border-border/70 px-6 py-5 sm:px-8">
-          <SectionHeader
-            eyebrow="الطلبات الأخيرة"
-            title="سجل الطلبات ومخرجات الإسناد"
-            description="تعرض القائمة الحالة الحالية لكل طلب، والمزوّد الحالي أو سبب عدم توفر مزوّد مؤهل، وأي سجل لإعادة الإسناد."
-          />
         </div>
 
-        {recentOrders.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="data-table min-w-[1080px]">
-              <thead>
-                <tr>
-                  <th>رقم الطلب</th>
-                  <th>الحالة</th>
-                  <th>الكمية</th>
-                  <th>المزوّد / نتيجة الإسناد</th>
-                  <th>تاريخ الإنشاء</th>
-                  <th>السعر التقديري</th>
-                  <th>الإجراء</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentOrders.map((order) => {
-                  const providerSummary = getOrderProviderSummary(order);
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">الحالة</label>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger>
+              <SelectValue placeholder="كل الحالات" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">كل الحالات</SelectItem>
+              {Object.values(OrderStatus).map((status) => (
+                <SelectItem key={status} value={status}>
+                  {getOrderStatusMeta(status).label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-                  return (
-                    <tr key={order.id}>
-                      <td className="font-semibold text-foreground">{order.id}</td>
-                      <td>
-                        <OrderStatusBadge status={order.status} />
-                      </td>
-                      <td className="text-muted-foreground">{getOrderQuantityTotal(order)} قطعة</td>
-                      <td>
-                        <div className="space-y-1.5">
-                          <p className="font-semibold text-foreground">{providerSummary.primary}</p>
-                          {order.reassignmentEvents.length > 0 ? (
-                            <p className="inline-flex items-center gap-2 rounded-full bg-warning/10 px-2.5 py-1 text-xs font-semibold text-warning">
-                              <ArrowLeftRight className="h-3.5 w-3.5" />
-                              {`سجل إعادة إسناد: ${order.reassignmentEvents.length}`}
-                            </p>
-                          ) : null}
-                          {providerSummary.secondary ? (
-                            <p className="max-w-md text-xs leading-6 text-muted-foreground">{providerSummary.secondary}</p>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="text-muted-foreground">{formatDateLabel(order.createdAt)}</td>
-                      <td className="font-semibold text-foreground">{formatSar(order.estimatedSubtotalSar)}</td>
-                      <td>
-                        {order.status === OrderStatus.Delivered ? (
-                          <Button
-                            size="sm"
-                            disabled={completionOrderId === order.id}
-                            onClick={() => void handleConfirmCompletion(order.id)}
-                          >
-                            تأكيد الاستلام
-                          </Button>
-                        ) : trackedExecutionStatuses.has(order.status) ? (
-                          <span className="text-xs text-muted-foreground">متابعة من القسم أعلاه</span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">لا يوجد إجراء</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">المزوّد</label>
+          <Select value={providerFilter} onValueChange={setProviderFilter}>
+            <SelectTrigger>
+              <SelectValue placeholder="كل المزوّدين" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">كل المزوّدين</SelectItem>
+              {providerOptions.map((provider) => (
+                <SelectItem key={provider.id} value={provider.id}>
+                  {provider.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">من تاريخ</label>
+          <div className="relative">
+            <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="ps-10" />
           </div>
-        ) : (
-          <div className="px-6 py-8 sm:px-8">
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">إلى تاريخ</label>
+          <div className="relative">
+            <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="ps-10" />
+          </div>
+        </div>
+      </FiltersBar>
+
+      <section className="space-y-5">
+        <DataTable
+          columns={columns}
+          rows={paginatedOrders}
+          getRowKey={(order) => order.id}
+          onRowClick={(order) => setSelectedOrder(order)}
+          emptyState={
             <EmptyState
-              title="لا توجد طلبات حديثة بعد"
-              description="ابدأ بإنشاء أول طلب ليظهر هنا سجل الإسناد، حالة التنفيذ، وأي محاولات إعادة تخصيص مستقبلية."
+              title="لا توجد طلبات مطابقة للفلاتر الحالية"
+              description="جرّب توسيع البحث أو إلغاء بعض الفلاتر، أو ابدأ بإدخال طلب جديد من نموذج التشغيل."
               action={
-                <Button onClick={handleOpenOrderForm}>
-                  <Plus className="h-4 w-4" />
-                  إنشاء أول طلب
+                <Button onClick={() => setShowNewOrderForm(true)}>
+                  إدخال طلب جديد
                 </Button>
               }
             />
-          </div>
-        )}
+          }
+        />
+
+        <div className="surface-card px-6 py-5 sm:px-8">
+          <PaginationBar currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+        </div>
       </section>
+
+      <HotelOrderDetailsDrawer
+        order={selectedOrder}
+        services={serviceCatalog}
+        open={Boolean(selectedOrder)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedOrder(undefined);
+          }
+        }}
+        onConfirmCompletion={handleConfirmCompletion}
+        isConfirming={Boolean(selectedOrder && completionOrderId === selectedOrder.id)}
+      />
     </DashboardLayout>
   );
 };

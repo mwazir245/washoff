@@ -1,5 +1,5 @@
-import { startWashoffStandaloneServer } from "./standalone-server";
-import { resolveWashoffEnvironment } from "./environment";
+import { startWashoffStandaloneServer } from "./standalone-server.ts";
+import { resolveWashoffEnvironment } from "./environment.ts";
 
 const run = async () => {
   const instance = await startWashoffStandaloneServer({

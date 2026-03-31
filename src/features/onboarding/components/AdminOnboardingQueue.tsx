@@ -140,15 +140,73 @@ const AdminOnboardingQueue = ({
                     </SectionCard>
 
                     {isProviderEntity(entity) ? (
-                      <SectionCard title="ملخص المزوّد" icon={<Factory className="h-5 w-5" />}>
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <DetailItem label="السعة اليومية" value={`${entity.dailyCapacityKg} كجم / يوم`} />
-                          <DetailItem
-                            label="الخدمات المدعومة"
-                            value={entity.supportedServiceNamesAr.join(" - ")}
-                          />
-                        </div>
-                      </SectionCard>
+                      <>
+                        <SectionCard title="بيانات المنشأة" icon={<Factory className="h-5 w-5" />}>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <DetailItem label="اسم المنشأة القانونية" value={entity.legalEntityName} />
+                            <DetailItem label="المدينة" value={entity.city} />
+                            <DetailItem label="رقم السجل التجاري" value={entity.commercialRegistrationNumber} />
+                            <DetailItem label="الرقم الضريبي" value={entity.taxRegistrationNumber} />
+                            <DetailItem label="جوال المنشأة" value={entity.businessPhone} />
+                            <DetailItem label="بريد المنشأة" value={entity.businessEmail} />
+                          </div>
+                        </SectionCard>
+
+                        <SectionCard title="الموقع والتشغيل" icon={<MapPinned className="h-5 w-5" />}>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <DetailItem label="العنوان" value={entity.addressText} />
+                            <DetailItem label="خط العرض" value={entity.latitude} />
+                            <DetailItem label="خط الطول" value={entity.longitude} />
+                            <DetailItem label="السعة اليومية" value={`${entity.dailyCapacityKg} كجم / يوم`} />
+                            <DetailItem label="زمن الاستلام" value={`${entity.pickupLeadTimeHours} ساعة`} />
+                            <DetailItem label="زمن التنفيذ" value={`${entity.executionTimeHours} ساعة`} />
+                            <DetailItem label="زمن التسليم" value={`${entity.deliveryTimeHours} ساعة`} />
+                            <DetailItem
+                              label="ساعات العمل"
+                              value={`${entity.workingHoursFrom} - ${entity.workingHoursTo}`}
+                            />
+                            <DetailItem
+                              label="أيام العمل"
+                              value={entity.workingDaysLabelsAr.join(" - ")}
+                            />
+                          </div>
+                        </SectionCard>
+
+                        <SectionCard title="الخدمات والحساب البنكي" icon={<ShieldCheck className="h-5 w-5" />}>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <DetailItem
+                              label="الخدمات المدعومة"
+                              value={entity.supportedServiceNamesAr.join(" - ") || "لم يحدد عروضًا بعد"}
+                            />
+                            <DetailItem label="اسم البنك" value={entity.bankName} />
+                            <DetailItem label="رقم الآيبان" value={entity.iban} />
+                            <DetailItem label="اسم صاحب الحساب" value={entity.bankAccountHolderName} />
+                            <DetailItem label="اسم مسؤول الحساب" value={entity.accountSetupName} />
+                            <DetailItem label="جوال مسؤول الحساب" value={entity.accountSetupPhone} />
+                            <DetailItem label="بريد مسؤول الحساب" value={entity.accountSetupEmail} />
+                          </div>
+                        </SectionCard>
+
+                        <SectionCard title="المستندات" icon={<FileCheck2 className="h-5 w-5" />}>
+                          <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                            <p className="text-xs font-semibold tracking-[0.08em] text-muted-foreground">
+                              السجل التجاري
+                            </p>
+                            <p className="mt-2 text-sm font-semibold text-foreground">
+                              {entity.commercialRegistrationFile.fileName}
+                            </p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {Math.ceil(entity.commercialRegistrationFile.sizeBytes / 1024)} ك.ب
+                            </p>
+                            <div className="mt-3">
+                              <OnboardingDocumentDownloadButton
+                                downloadPath={entity.commercialRegistrationFile.downloadPath}
+                                fileName={entity.commercialRegistrationFile.fileName}
+                              />
+                            </div>
+                          </div>
+                        </SectionCard>
+                      </>
                     ) : (
                       <>
                         <SectionCard title="البيانات الأساسية" icon={<Building2 className="h-5 w-5" />}>

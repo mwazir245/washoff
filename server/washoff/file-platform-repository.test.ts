@@ -49,8 +49,11 @@ describe("createFileBackedWashoffPlatformRepository", () => {
     );
 
     const order = await repository.createHotelOrder({
-      serviceIds: ["wash_fold", "iron"],
-      itemCount: 18,
+      roomNumber: "1208",
+      items: [
+        { serviceId: "svc-bedsheet-wash_and_iron", quantity: 10 },
+        { serviceId: "svc-shirt-iron", quantity: 8 },
+      ],
       pickupAt,
       notesAr: "طلب تجريبي من واجهة الاختبار الخلفي",
     });
@@ -89,8 +92,8 @@ describe("createFileBackedWashoffPlatformRepository", () => {
     );
 
     const createdOrder = await repository.createHotelOrder({
-      serviceIds: ["wash_fold"],
-      itemCount: 12,
+      roomNumber: "1301",
+      items: [{ serviceId: "svc-thobe-dry_clean", quantity: 12 }],
       pickupAt,
       notesAr: "اختبار إعادة تحميل التخزين",
     });

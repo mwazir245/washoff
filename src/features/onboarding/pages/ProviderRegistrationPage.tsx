@@ -18,29 +18,40 @@ import { formatDateTimeLabel } from "@/shared/lib/formatters";
 const ProviderRegistrationPage = () => {
   const { language } = usePlatformLanguage();
   const pageContent = usePlatformPageContent("onboarding_provider");
-  const servicesQuery = useRegistrationServiceCatalog();
+  const catalogQuery = useRegistrationServiceCatalog();
   const registerMutation = useProviderRegistrationMutation();
   const submittedRegistration = registerMutation.data as ProviderRegistrationResult | undefined;
   const submittedProvider = submittedRegistration?.provider;
   const submittedAccount = submittedRegistration?.account;
+  const submittedOfferingNames = submittedProvider?.serviceOfferings
+    ?.map((offering) => `${offering.productName.ar} - ${offering.serviceTypeName.ar}`)
+    .join(" - ");
 
   return (
     <PublicRegistrationLayout
       eyebrow="تسجيل مزود خدمة"
-      title={pageContent.getText("page", "title", "انضم إلى شبكة WashOff كمزوّد معتمد")}
-      description={pageContent.getText("page", "description", "أرسل بيانات المغسلة والخدمات والسعة التشغيلية اليومية ليتم تقييمها من الإدارة. لا يدخل أي مزوّد داخل الإسناد الذكي قبل الاعتماد ثم تفعيل الحساب المرتبط.")}
+      title={pageContent.getText("page", "title", "انضم إلى شبكة واش أوف كمزوّد معتمد")}
+      description={pageContent.getText(
+        "page",
+        "description",
+        "أدخل بيانات المنشأة والموقع والخدمات القياسية والسعة التشغيلية والمستندات النظامية ليتم تقييمها من الإدارة. لا يدخل أي مزوّد داخل الإسناد الذكي قبل الاعتماد ثم تفعيل الحساب المرتبط.",
+      )}
       checklistTitle={pageContent.getText("page", "checklist_title", "لماذا يوجد اعتماد للمزوّدين؟")}
-      checklistDescription={pageContent.getText("page", "checklist_description", "لأن WashOff منصة تشغيل ذكية وليست سوقًا مفتوحًا، لا يشارك في الإسناد إلا المزوّدون المعتمدون تشغيليًا.")}
+      checklistDescription={pageContent.getText(
+        "page",
+        "checklist_description",
+        "لأن واش أوف منصة تشغيل ذكية وليست سوقًا مفتوحًا، لا يشارك في الإسناد إلا المزوّدون المعتمدون تشغيليًا.",
+      )}
       checklistItems={[
         language === "en"
-          ? "City coverage, services, and daily capacity are reviewed."
-          : "تُراجع المدينة والخدمات والسعة اليومية.",
+          ? "City coverage, service matrix, and daily capacity are reviewed."
+          : "تُراجع المدينة ومصفوفة الخدمات والسعة اليومية.",
         language === "en"
-          ? "The linked account remains pending until approval and activation."
+          ? "Linked account access stays pending until approval and activation."
           : "يبقى الحساب المرتبط بانتظار الاعتماد ثم التفعيل.",
         language === "en"
-          ? "Only approved providers become eligible for automatic assignments."
-          : "بعد الاعتماد فقط يصبح المزوّد مؤهلًا لاستقبال الإسنادات التلقائية.",
+          ? "Only approved provider offerings become eligible for automatic assignments."
+          : "بعد اعتماد الأسعار والخدمات فقط يصبح المزوّد مؤهلًا لاستقبال الإسنادات التلقائية.",
       ]}
     >
       {submittedProvider ? (
@@ -66,14 +77,16 @@ const ProviderRegistrationPage = () => {
                 تاريخ الإرسال: {formatDateTimeLabel(submittedProvider.onboarding.submittedAt)}
               </p>
               <p className="text-sm text-muted-foreground">
-                الخدمات: {submittedProvider.capabilities.map((capability) => capability.serviceName.ar).join(" - ")}
+                الخدمات: {submittedOfferingNames || "تم حفظ عروض التسعير القياسية بانتظار الاعتماد."}
               </p>
             </div>
           </div>
 
           {submittedAccount ? (
             <div className="info-panel px-5 py-5">
-              <p className="text-xs font-semibold tracking-[0.08em] text-muted-foreground">الحساب المرتبط</p>
+              <p className="text-xs font-semibold tracking-[0.08em] text-muted-foreground">
+                الحساب المرتبط
+              </p>
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <p className="text-sm text-foreground">البريد: {submittedAccount.email}</p>
                 <p className="text-sm text-foreground">الدور: {submittedAccount.roleLabelAr}</p>
@@ -84,13 +97,17 @@ const ProviderRegistrationPage = () => {
           ) : null}
 
           <div className="accent-panel px-5 py-5 text-sm leading-7 text-muted-foreground">
-            {pageContent.getText("success", "description", "حتى يتم اعتماد المزوّد ثم تفعيل حسابه، لن يدخل في محرك المطابقة ولن يستقبل أي إسناد تشغيلي من الفنادق.")}
+            {pageContent.getText(
+              "success",
+              "description",
+              "حتى يتم اعتماد المزوّد ثم تفعيل حسابه واعتماد أسعار الخدمات، لن يدخل في محرك المطابقة ولن يستقبل أي إسناد تشغيلي من الفنادق. ستراجع الإدارة بيانات المنشأة والموقع والمستندات وعروض الأسعار قبل فتح التشغيل.",
+            )}
           </div>
 
           <div className="flex flex-wrap gap-3">
             <Button asChild>
               <Link to={appRoutes.landing}>
-                {language === "en" ? "Back to home" : "العودة للرئيسية"}
+                {language === "en" ? "Back to home" : "العودة إلى الرئيسية"}
                 <ArrowLeft className="h-4 w-4" />
               </Link>
             </Button>
@@ -101,30 +118,34 @@ const ProviderRegistrationPage = () => {
             </Button>
           </div>
         </div>
-      ) : servicesQuery.isError ? (
+      ) : catalogQuery.isError ? (
         <EmptyState
-          title={language === "en" ? "Unable to load service catalog" : "تعذر تحميل قائمة الخدمات"}
+          title={language === "en" ? "Unable to load service catalog" : "تعذر تحميل كتالوج الخدمات"}
           description={
-            servicesQuery.error instanceof Error
-              ? servicesQuery.error.message
+            catalogQuery.error instanceof Error
+              ? catalogQuery.error.message
               : language === "en"
                 ? "An error occurred while preparing the provider registration data."
                 : "حدث خطأ أثناء تجهيز بيانات تسجيل المزوّد."
           }
-          action={<Button onClick={() => void servicesQuery.refetch()}>{language === "en" ? "Retry" : "إعادة المحاولة"}</Button>}
+          action={
+            <Button onClick={() => void catalogQuery.refetch()}>
+              {language === "en" ? "Retry" : "إعادة المحاولة"}
+            </Button>
+          }
         />
-      ) : servicesQuery.isLoading || !servicesQuery.data ? (
+      ) : catalogQuery.isLoading || !catalogQuery.data ? (
         <div className="info-panel flex items-start gap-3 px-5 py-5 text-sm text-muted-foreground">
           <AlertTriangle className="mt-1 h-5 w-5 text-primary" />
           <p>
             {language === "en"
-              ? "Preparing the service catalog and provider registration form."
-              : "جارٍ تجهيز كتالوج الخدمات ونموذج تسجيل المزوّد."}
+              ? "Preparing the standardized service catalog and provider onboarding form."
+              : "جارٍ تجهيز كتالوج الخدمات القياسي ونموذج تسجيل المزوّد."}
           </p>
         </div>
       ) : (
         <ProviderRegistrationForm
-          services={servicesQuery.data}
+          catalog={catalogQuery.data}
           isSubmitting={registerMutation.isPending}
           errorMessage={registerMutation.error instanceof Error ? registerMutation.error.message : undefined}
           onSubmit={async (input) => {

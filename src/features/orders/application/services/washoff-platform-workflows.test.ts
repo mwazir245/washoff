@@ -18,6 +18,13 @@ import { createWashoffPlatformApplicationService } from "./washoff-platform-serv
 const DEFAULT_PASSWORD = "Washoff123!";
 const DEFAULT_ADMIN_PASSWORD = "Zajillema2@123";
 const DEFAULT_ADMIN_EMAIL = "mmekawe@hotmail.com";
+const DEFAULT_REQUESTED_SERVICE_ID = "svc-thobe-dry_clean";
+const MULTI_SERVICE_REQUEST_IDS = ["svc-bedsheet-wash_and_iron", "svc-shirt-iron"];
+const DEFAULT_PROVIDER_SERVICE_PRICING = [
+  { serviceId: DEFAULT_REQUESTED_SERVICE_ID, proposedPriceSar: 12.65 },
+  { serviceId: "svc-shirt-iron", proposedPriceSar: 3.45 },
+  { serviceId: "svc-bedsheet-wash_and_iron", proposedPriceSar: 11.5 },
+];
 
 const extractToken = (actionPath?: string) => {
   return new URL(actionPath ?? "", "https://washoff.local").searchParams.get("token") ?? "";
@@ -75,6 +82,56 @@ const buildHotelRegistrationInput = (overrides: Record<string, unknown> = {}) =>
   contactEmail: "hotel-e2e@washoff.sa",
   contactPhone: "0501001001",
   ...overrides,
+});
+
+const buildProviderRegistrationInput = (overrides: Record<string, unknown> = {}) => ({
+  providerName: "مغسلة التشغيل المتكامل",
+  legalEntityName: "شركة تشغيل المغسلة",
+  commercialRegistrationNumber: "1010776655",
+  taxRegistrationNumber: "300998877660003",
+  city: "الرياض",
+  businessPhone: "0552002002",
+  businessEmail: "provider-ops@washoff.sa",
+  addressText: "المنطقة الصناعية الثانية - الرياض",
+  latitude: 24.774265,
+  longitude: 46.738586,
+  servicePricing: DEFAULT_PROVIDER_SERVICE_PRICING,
+  dailyCapacityKg: 200,
+  pickupLeadTimeHours: 2,
+  executionTimeHours: 18,
+  deliveryTimeHours: 4,
+  workingDays: ["sunday", "monday", "tuesday", "wednesday", "thursday"],
+  workingHoursFrom: "08:00",
+  workingHoursTo: "22:00",
+  commercialRegistrationFile: {
+    fileName: "provider-commercial-registration.pdf",
+    mimeType: "application/pdf",
+    sizeBytes: 128_000,
+    contentBase64: "JVBERi0xLjQKJcTl8uXr",
+  },
+  bankName: "البنك الأهلي السعودي",
+  iban: "SA0380000000608010167519",
+  bankAccountHolderName: "شركة تشغيل المغسلة",
+  accountFullName: "مشرف المناوبة",
+  accountPhone: "0552002002",
+  accountEmail: "provider-e2e@washoff.sa",
+  ...overrides,
+});
+
+const buildHotelOrderCommand = (
+  overrides: Partial<{
+    hotelId: string;
+    roomNumber: string;
+    pickupAt: string;
+    notes: string;
+    items: Array<{ serviceId: string; quantity: number }>;
+  }> = {},
+) => ({
+  hotelId: overrides.hotelId,
+  roomNumber: overrides.roomNumber ?? "1208",
+  items: overrides.items ?? [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 12 }],
+  pickupAt: overrides.pickupAt ?? "2030-03-23T10:00:00+03:00",
+  notes: overrides.notes ?? "طلب تشغيلي من لوحة الفندق",
 });
 
 const activateFromPath = async (
@@ -148,20 +205,31 @@ const registerAndActivateProvider = async (
     dailyCapacityKg?: number;
   },
 ) => {
-  const registration = await service.registerProvider({
-    providerName: input?.providerName ?? "مغسلة التشغيل المتكامل",
-    city: "الرياض",
-    contactPersonName: input?.contactPersonName ?? "مشرف المناوبة",
-    contactEmail: input?.contactEmail ?? "provider-e2e@washoff.sa",
-    contactPhone: input?.contactPhone ?? "0552002002",
-    supportedServiceIds: ["wash_fold"],
-    dailyCapacityKg: input?.dailyCapacityKg ?? 200,
-  });
+  const registration = await service.registerProvider(
+    buildProviderRegistrationInput({
+      providerName: input?.providerName ?? "مغسلة التشغيل المتكامل",
+      businessPhone: input?.contactPhone ?? "0552002002",
+      businessEmail: input?.contactEmail ? `ops-${input.contactEmail}` : "provider-ops@washoff.sa",
+      accountFullName: input?.contactPersonName ?? "مشرف المناوبة",
+      accountPhone: input?.contactPhone ?? "0552002002",
+      accountEmail: input?.contactEmail ?? "provider-e2e@washoff.sa",
+      dailyCapacityKg: input?.dailyCapacityKg ?? 200,
+    }),
+  );
 
   await signInAs(service, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD);
   const approval = await service.approveProviderRegistration({
     entityId: registration.provider.id,
   });
+  const pricingReview = await service.getProviderPricingAdminData();
+
+  for (const submission of pricingReview.pendingReviews.filter(
+    (entry) => entry.providerId === registration.provider.id,
+  )) {
+    await service.approveProviderServicePricing({
+      offeringId: submission.offeringId,
+    });
+  }
 
   await activateFromPath(
     service,
@@ -246,23 +314,45 @@ describe("Washoff platform end-to-end workflow validation", () => {
   it("registers, approves, activates, and logs in a provider account before provider operational access succeeds", async () => {
     const { service } = createServiceContext();
 
-    const registration = await service.registerProvider({
-      providerName: "مغسلة التحقق من التسجيل",
-      city: "الرياض",
-      contactPersonName: "نايف",
-      contactEmail: "provider-onboarding-e2e@washoff.sa",
-      contactPhone: "0554004004",
-      supportedServiceIds: ["wash_fold", "iron"],
-      dailyCapacityKg: 240,
-      notes: "اختبار تسجيل مزود كامل",
-    });
+    const registration = await service.registerProvider(
+      buildProviderRegistrationInput({
+        providerName: "مغسلة التحقق من التسجيل",
+        businessPhone: "0554004004",
+        businessEmail: "provider-onboarding-ops@washoff.sa",
+        servicePricing: [
+          { serviceId: DEFAULT_REQUESTED_SERVICE_ID, proposedPriceSar: 12.65 },
+          { serviceId: "svc-shirt-iron", proposedPriceSar: 3.45 },
+        ],
+        dailyCapacityKg: 240,
+        accountFullName: "نايف",
+        accountPhone: "0554004004",
+        accountEmail: "provider-onboarding-e2e@washoff.sa",
+        notes: "اختبار تسجيل مزود كامل",
+      }),
+    );
 
     expect(registration.provider.onboarding.status).toBe(OnboardingStatus.PendingApproval);
     expect(registration.provider.active).toBe(false);
 
     await signInAs(service, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD);
     const onboardingBeforeApproval = await service.getAdminOnboardingData();
-    expect(onboardingBeforeApproval.providers.some((provider) => provider.id === registration.provider.id)).toBe(true);
+    const providerSummary = onboardingBeforeApproval.providers.find(
+      (provider) => provider.id === registration.provider.id,
+    );
+    expect(providerSummary).toBeDefined();
+    expect(providerSummary).toMatchObject({
+      commercialRegistrationNumber: "1010776655",
+      taxRegistrationNumber: "300998877660003",
+      addressText: "المنطقة الصناعية الثانية - الرياض",
+      latitude: 24.774265,
+      longitude: 46.738586,
+      dailyCapacityKg: 240,
+      pickupLeadTimeHours: 2,
+      executionTimeHours: 18,
+      deliveryTimeHours: 4,
+      bankName: "البنك الأهلي السعودي",
+      accountSetupEmail: "provider-onboarding-e2e@washoff.sa",
+    });
 
     const approval = await service.approveProviderRegistration({
       entityId: registration.provider.id,
@@ -296,13 +386,17 @@ describe("Washoff platform end-to-end workflow validation", () => {
     });
 
     const createdOrder = await service.createHotelOrder({
-      serviceIds: ["wash_fold"],
-      itemCount: 24,
-      pickupAt: "2030-03-23T10:00:00+03:00",
+      ...buildHotelOrderCommand({
+        roomNumber: "1208",
+        items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 24 }],
+        pickupAt: "2030-03-23T10:00:00+03:00",
+        notes: "طلب تشغيلي من رحلة التحقق",
+      }),
       notes: "طلب تشغيلي من رحلة التحقق",
     });
 
     expect(createdOrder.hotelId).toBe(hotelRegistration.hotel.id);
+    expect(createdOrder.roomNumber).toBe("1208");
     expect(createdOrder.status).toBe(OrderStatus.Assigned);
     expect(createdOrder.providerId).toBeTruthy();
     expect(createdOrder.activeAssignment?.status).toBe(AssignmentStatus.PendingAcceptance);
@@ -373,9 +467,12 @@ describe("Washoff platform end-to-end workflow validation", () => {
     });
 
     const createdOrder = await service.createHotelOrder({
-      serviceIds: ["wash_fold"],
-      itemCount: 40,
-      pickupAt: "2030-03-24T10:00:00+03:00",
+      ...buildHotelOrderCommand({
+        roomNumber: "1301",
+        items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 40 }],
+        pickupAt: "2030-03-24T10:00:00+03:00",
+        notes: "طلب مخصص لاختبار إعادة الإسناد",
+      }),
       notes: "طلب مخصص لاختبار إعادة الإسناد",
     });
 
@@ -442,9 +539,12 @@ describe("Washoff platform end-to-end workflow validation", () => {
     });
 
     const createdOrder = await service.createHotelOrder({
-      serviceIds: ["wash_fold"],
-      itemCount: 18,
-      pickupAt: "2030-03-27T10:00:00+03:00",
+      ...buildHotelOrderCommand({
+        roomNumber: "1410",
+        items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 18 }],
+        pickupAt: "2030-03-27T10:00:00+03:00",
+        notes: "طلب مخصص للتحقق من دورة التنفيذ الكاملة",
+      }),
       notes: "طلب مخصص للتحقق من دورة التنفيذ الكاملة",
     });
 
@@ -497,6 +597,9 @@ describe("Washoff platform end-to-end workflow validation", () => {
     clearClientSession();
     await signInAs(service, hotelRegistration.account.email);
     const hotelDashboardBeforeCompletion = await service.getHotelDashboardData();
+    expect(hotelDashboardBeforeCompletion.recentOrders.find((order) => order.id === createdOrder.id)?.roomNumber).toBe(
+      "1410",
+    );
     expect(hotelDashboardBeforeCompletion.recentOrders.find((order) => order.id === createdOrder.id)?.status).toBe(
       OrderStatus.Delivered,
     );
@@ -539,9 +642,12 @@ describe("Washoff platform end-to-end workflow validation", () => {
     });
 
     const createdOrder = await service.createHotelOrder({
-      serviceIds: ["wash_fold"],
-      itemCount: 14,
-      pickupAt: "2030-03-28T10:00:00+03:00",
+      ...buildHotelOrderCommand({
+        roomNumber: "1502",
+        items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 14 }],
+        pickupAt: "2030-03-28T10:00:00+03:00",
+        notes: "طلب لاختبار الانتقالات غير الصالحة",
+      }),
       notes: "طلب لاختبار الانتقالات غير الصالحة",
     });
 
@@ -598,15 +704,17 @@ describe("Washoff platform end-to-end workflow validation", () => {
         contactPhone: "0507007007",
       }),
     );
-    const providerRegistration = await service.registerProvider({
-      providerName: "مغسلة غير معتمدة",
-      city: "الرياض",
-      contactPersonName: "رائد",
-      contactEmail: "provider-pending-e2e@washoff.sa",
-      contactPhone: "0557007007",
-      supportedServiceIds: ["wash_fold"],
-      dailyCapacityKg: 260,
-    });
+    const providerRegistration = await service.registerProvider(
+      buildProviderRegistrationInput({
+        providerName: "مغسلة غير معتمدة",
+        businessPhone: "0557007007",
+        businessEmail: "provider-pending-ops@washoff.sa",
+        accountFullName: "رائد",
+        accountPhone: "0557007007",
+        accountEmail: "provider-pending-e2e@washoff.sa",
+        dailyCapacityKg: 260,
+      }),
+    );
 
     expect(hotelRegistration.hotel.onboarding.status).toBe(OnboardingStatus.PendingApproval);
     expect(providerRegistration.provider.onboarding.status).toBe(OnboardingStatus.PendingApproval);
@@ -627,10 +735,12 @@ describe("Washoff platform end-to-end workflow validation", () => {
     await signInAs(service, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD);
     await expect(
       service.createHotelOrder({
-        hotelId: hotelRegistration.hotel.id,
-        serviceIds: ["wash_fold"],
-        itemCount: 12,
-        pickupAt: "2030-03-25T10:00:00+03:00",
+        ...buildHotelOrderCommand({
+          hotelId: hotelRegistration.hotel.id,
+          roomNumber: "1601",
+          items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 12 }],
+          pickupAt: "2030-03-25T10:00:00+03:00",
+        }),
       }),
     ).rejects.toThrow("اعتماد");
     await expect(repository.listProviderIncomingOrders(providerRegistration.provider.id)).rejects.toThrow("اعتماد");
@@ -638,9 +748,12 @@ describe("Washoff platform end-to-end workflow validation", () => {
     clearClientSession();
     await signInAs(service, "hotel.ops@washoff.sa");
     const order = await service.createHotelOrder({
-      serviceIds: ["wash_fold"],
-      itemCount: 22,
-      pickupAt: "2030-03-26T10:00:00+03:00",
+      ...buildHotelOrderCommand({
+        roomNumber: "1608",
+        items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 22 }],
+        pickupAt: "2030-03-26T10:00:00+03:00",
+        notes: "تحقق من استبعاد المزود غير المعتمد",
+      }),
       notes: "تحقق من استبعاد المزوّد غير المعتمد",
     });
     const pendingProviderLog = order.matchingLogs.find((log) => log.providerId === providerRegistration.provider.id);

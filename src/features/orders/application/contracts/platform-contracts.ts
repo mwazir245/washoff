@@ -21,9 +21,21 @@ import type { Assignment } from "@/features/orders/model";
 import { ReassignmentReason } from "@/features/orders/model";
 import type { MatchingDecision } from "@/features/orders/model/matching";
 import type { MatchingRunResult, MatchingScoreWeights } from "@/features/orders/model/matching";
+import type {
+  AdminFinanceSummary,
+  HotelInvoice,
+  ProviderSettlementStatement,
+} from "@/features/orders/model/finance";
 import type { CreateHotelOrderInput, LaundryOrder } from "@/features/orders/model/order";
 import type { ProviderProfile } from "@/features/orders/model/provider";
-import type { ServiceCatalogItem } from "@/features/orders/model/service";
+import type {
+  PlatformProduct,
+  PlatformServiceMatrixRow,
+  PlatformServiceType,
+  ProviderServiceOffering,
+  ProviderServicePricingInput,
+  ServiceCatalogItem,
+} from "@/features/orders/model/service";
 import type { ScoreBreakdown, EligibilityResult } from "@/features/orders/model/matching";
 import { OrderStatus } from "@/features/orders/model/lifecycle";
 import type {
@@ -34,7 +46,11 @@ import type {
   HotelClassification,
   HotelServiceLevel,
 } from "@/features/orders/model/hotel";
-import type { ProviderRegistrationInput } from "@/features/orders/model/provider";
+import type {
+  ProviderRegistrationInput,
+  ProviderRegistrationStoredDocumentReference,
+  ProviderWorkingDay,
+} from "@/features/orders/model/provider";
 import type { OnboardingStatus } from "@/features/orders/model/onboarding";
 import type {
   PlatformRuntimeStatus,
@@ -56,6 +72,37 @@ export interface HotelDashboardData {
   recentOrders: LaundryOrder[];
 }
 
+export interface HotelBillingData {
+  hotelName: string;
+  invoices: HotelInvoice[];
+  summary: {
+    issuedInvoicesCount: number;
+    collectedInvoicesCount: number;
+    outstandingTotalIncVatSar: number;
+    totalInvoicedIncVatSar: number;
+  };
+}
+
+export interface PagedResult<Item> {
+  items: Item[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface ListAdminOrdersPageCommand {
+  page: number;
+  pageSize: number;
+  search?: string;
+  status?: string;
+  providerId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export type ListAdminOrdersPageResult = PagedResult<LaundryOrder>;
+
 export interface ProviderDashboardMetric {
   title: string;
   value: string | number;
@@ -70,8 +117,66 @@ export interface ProviderDashboardData {
     total: number;
   };
   metrics: ProviderDashboardMetric[];
+  serviceOfferings: ProviderServiceOffering[];
   incomingOrders: LaundryOrder[];
   activeOrders: LaundryOrder[];
+}
+
+export interface ProviderFinanceData {
+  providerName: string;
+  statements: ProviderSettlementStatement[];
+  summary: {
+    pendingStatementsCount: number;
+    paidStatementsCount: number;
+    pendingTotalIncVatSar: number;
+    totalEarnedIncVatSar: number;
+  };
+}
+
+export interface PlatformServiceMatrixSummary extends PlatformServiceMatrixRow {
+  productName: {
+    ar: string;
+    en?: string;
+  };
+  serviceTypeName: {
+    ar: string;
+    en?: string;
+  };
+  matrixLabelAr: string;
+}
+
+export interface PlatformServiceCatalogAdminData {
+  serviceTypes: PlatformServiceType[];
+  products: PlatformProduct[];
+  matrixRows: PlatformServiceMatrixSummary[];
+}
+
+export interface ProviderServicePricingReviewEntry {
+  offeringId: string;
+  providerId: string;
+  providerNameAr: string;
+  productId: string;
+  productNameAr: string;
+  serviceType: string;
+  serviceTypeLabelAr: string;
+  pricingUnitLabelAr: string;
+  suggestedPriceSar?: number;
+  currentApprovedPriceSar?: number;
+  proposedPriceSar: number;
+  proposedSubmittedAt: string;
+  activeApprovedAt?: string;
+  activeStatusLabelAr: string;
+  proposedStatusLabelAr: string;
+  rejectionReasonAr?: string;
+}
+
+export interface ProviderPricingAdminData {
+  pendingReviews: ProviderServicePricingReviewEntry[];
+}
+
+export interface ProviderServiceManagementData {
+  catalog: PlatformServiceCatalogAdminData;
+  offerings: ProviderServiceOffering[];
 }
 
 export interface AdminKpi {
@@ -164,6 +269,33 @@ export interface AdminDashboardData {
   matchingTransparency: MatchingTransparencyOrder[];
 }
 
+export interface AdminFinanceData {
+  summary: AdminFinanceSummary;
+  hotelInvoices: HotelInvoice[];
+  providerStatements: ProviderSettlementStatement[];
+}
+
+export interface GetAdminFinancePageCommand {
+  invoicePage: number;
+  invoicePageSize: number;
+  invoiceSearch?: string;
+  invoiceStatus?: string;
+  invoiceDate?: string;
+  statementPage: number;
+  statementPageSize: number;
+  statementSearch?: string;
+  statementStatus?: string;
+  statementDate?: string;
+}
+
+export interface AdminFinancePageData {
+  summary: AdminFinanceSummary;
+  hotelInvoicesPage: PagedResult<HotelInvoice>;
+  providerStatementsPage: PagedResult<ProviderSettlementStatement>;
+}
+
+export type GetAdminFinancePageResult = AdminFinancePageData;
+
 export interface OnboardingEntitySummary {
   id: string;
   status: OnboardingStatus;
@@ -212,8 +344,57 @@ export interface HotelOnboardingSummary extends OnboardingEntitySummary {
 }
 
 export interface ProviderOnboardingSummary extends OnboardingEntitySummary {
+  legalEntityName?: string;
+  commercialRegistrationNumber: string;
+  taxRegistrationNumber: string;
+  businessPhone: string;
+  businessEmail: string;
+  addressText: string;
+  latitude: number;
+  longitude: number;
   supportedServiceNamesAr: string[];
   dailyCapacityKg: number;
+  pickupLeadTimeHours: number;
+  executionTimeHours: number;
+  deliveryTimeHours: number;
+  workingDays: ProviderWorkingDay[];
+  workingDaysLabelsAr: string[];
+  workingHoursFrom: string;
+  workingHoursTo: string;
+  commercialRegistrationFile: ProviderRegistrationStoredDocumentReference;
+  bankName: string;
+  iban: string;
+  bankAccountHolderName: string;
+  accountSetupName: string;
+  accountSetupPhone: string;
+  accountSetupEmail: string;
+}
+
+export interface UpsertPlatformProductCommand {
+  id?: string;
+  nameAr: string;
+  active: boolean;
+}
+
+export interface UpdatePlatformServiceMatrixCommand {
+  matrixRowId: string;
+  active?: boolean;
+  isAvailable?: boolean;
+  suggestedPriceSar?: number;
+}
+
+export interface SubmitProviderServicePricingCommand {
+  providerId?: string;
+  offerings: ProviderServicePricingInput[];
+}
+
+export interface ApproveProviderServicePricingCommand {
+  offeringId: string;
+}
+
+export interface RejectProviderServicePricingCommand {
+  offeringId: string;
+  rejectionReasonAr?: string;
 }
 
 export interface AdminOnboardingData {
@@ -281,6 +462,16 @@ export interface ConfirmHotelOrderCompletionCommand {
   orderId: string;
   hotelId?: string;
   notesAr?: string;
+}
+
+export interface MarkHotelInvoiceCollectedCommand {
+  invoiceId: string;
+  actorAccountId?: string;
+}
+
+export interface MarkProviderStatementPaidCommand {
+  statementId: string;
+  actorAccountId?: string;
 }
 
 export interface ReviewRegistrationCommand {
@@ -441,3 +632,20 @@ export type ListPlatformContentEntriesResult = PlatformContentEntry[];
 export type UpdatePlatformContentEntryResult = PlatformContentEntry;
 export type UpdatePlatformContentEntryCommand = PlatformContentEntryUpdateCommand;
 export type ListPlatformContentAuditResult = PlatformContentAuditEntry[];
+export type GetPlatformServiceCatalogAdminResult = PlatformServiceCatalogAdminData;
+export type UpsertPlatformProductResult = PlatformProduct;
+export type UpdatePlatformServiceMatrixResult = PlatformServiceMatrixSummary;
+export type GetProviderServiceManagementResult = ProviderServiceManagementData;
+export type SubmitProviderServicePricingResult = ProviderServiceManagementData;
+export type GetProviderPricingAdminDataResult = ProviderPricingAdminData;
+export type ApproveProviderServicePricingResult = ProviderServiceOffering;
+export type RejectProviderServicePricingResult = ProviderServiceOffering;
+export type GetHotelBillingDataResult = HotelBillingData;
+export type GetProviderFinanceDataResult = ProviderFinanceData;
+export type GetAdminFinanceDataResult = AdminFinanceData;
+export type GetAdminFinancePageCommandResult = GetAdminFinancePageResult;
+export type GetAdminFinancePageCommandInput = GetAdminFinancePageCommand;
+export type ListAdminOrdersPageCommandInput = ListAdminOrdersPageCommand;
+export type ListAdminOrdersPageCommandResult = ListAdminOrdersPageResult;
+export type MarkHotelInvoiceCollectedResult = HotelInvoice;
+export type MarkProviderStatementPaidResult = ProviderSettlementStatement;

@@ -1,0 +1,71 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: washoff-nginx
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: washoff-app
+    restart: unless-stopped
+    env_file:
+      - .env.docker.prod
+    environment:
+      WASHOFF_RUN_MIGRATIONS: "true"
+      WASHOFF_RUN_PRISMA_GENERATE: "true"
+      WASHOFF_ENABLE_WORKER: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: washoff-worker
+    restart: unless-stopped
+    env_file:
+      - .env.docker.prod
+    environment:
+      WASHOFF_RUN_MIGRATIONS: "false"
+      WASHOFF_RUN_PRISMA_GENERATE: "true"
+      WASHOFF_ENABLE_WORKER: "true"
+    command: ["npm", "run", "worker:start"]
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:15
+    container_name: washoff-db
+    restart: unless-stopped
+    env_file:
+      - .env.docker.prod
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

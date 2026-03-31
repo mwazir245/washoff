@@ -5,11 +5,11 @@ import {
   IdentityEmailDeliveryStatus,
   identityEmailDeliveryStatusLabelsAr,
   type IdentityEmailDeliverySummary,
-} from "../../src/features/auth/model";
-import type { WashoffIdentityMailDelivery } from "../../src/features/orders/application/services/washoff-platform-service";
-import { renderActivationEmailTemplate, renderPasswordResetEmailTemplate } from "./identity-mail-templates";
-import { createWashoffLogger, type WashoffLogger } from "./logger";
-import type { WashoffMetrics } from "./metrics";
+} from "../../src/features/auth/model/index.ts";
+import type { WashoffIdentityMailDelivery } from "../../src/features/orders/application/services/washoff-platform-service.ts";
+import { renderActivationEmailTemplate, renderPasswordResetEmailTemplate } from "./identity-mail-templates.ts";
+import { createWashoffLogger, type WashoffLogger } from "./logger.ts";
+import type { WashoffMetrics } from "./metrics.ts";
 
 export type WashoffIdentityMailMode = "disabled" | "console" | "outbox" | "smtp";
 

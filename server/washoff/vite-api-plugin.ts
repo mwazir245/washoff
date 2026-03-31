@@ -1,15 +1,15 @@
 import path from "node:path";
 import type { Plugin, ViteDevServer } from "vite";
-import { createWashoffApiHandler, type WashoffApiRuntime, WASHOFF_API_BASE_PATH } from "./api-handler";
-import { startWashoffAssignmentExpiryWorkerLoop } from "./assignment-expiry-worker";
-import type { WashoffEnvironment } from "./environment";
-import { createWashoffLogger, type WashoffLogger } from "./logger";
-import { createInMemoryWashoffMetrics, type WashoffMetrics } from "./metrics";
+import type { WashoffEnvironment } from "./environment.ts";
+import { createWashoffLogger, type WashoffLogger } from "./logger.ts";
+import { createInMemoryWashoffMetrics, type WashoffMetrics } from "./metrics.ts";
 
 export interface WashoffApiVitePluginOptions {
   dataFilePath?: string;
   environment?: WashoffEnvironment;
 }
+
+const WASHOFF_API_BASE_PATH = "/api/platform";
 
 const loadRuntime = async (
   server: ViteDevServer,
@@ -38,7 +38,7 @@ export const createWashoffApiVitePlugin = (
     configureServer(server) {
       const logger = createWashoffLogger({ bindings: { component: "washoff-vite-api" } });
       const metrics = createInMemoryWashoffMetrics();
-      let runtimePromise: Promise<WashoffApiRuntime> | undefined;
+      let runtimePromise: Promise<unknown> | undefined;
       let stopWorkerLoop: (() => void) | undefined;
 
       const getRuntime = () => {
@@ -61,25 +61,38 @@ export const createWashoffApiVitePlugin = (
           return;
         }
 
-        const runtime = await getRuntime();
+        const runtime = (await getRuntime()) as {
+          config: {
+            workerEnabled: boolean;
+            workerPollIntervalMs: number;
+          };
+          expiryWorker: unknown;
+        };
 
         if (!runtime.config.workerEnabled) {
           return;
         }
 
-        stopWorkerLoop = startWashoffAssignmentExpiryWorkerLoop({
+        const workerModule = await server.ssrLoadModule("/server/washoff/assignment-expiry-worker.ts");
+
+        stopWorkerLoop = workerModule.startWashoffAssignmentExpiryWorkerLoop({
           worker: runtime.expiryWorker,
           intervalMs: runtime.config.workerPollIntervalMs,
           logger: logger.child({ component: "assignment-expiry-worker-loop" }),
         });
       };
 
-      const handleRequest = createWashoffApiHandler({
-        getRuntime,
-        ensureWorkerLoop,
-        logger,
-        metrics,
-      });
+      const handleRequest = async (request: Parameters<ViteDevServer["middlewares"]["use"]>[0], response: Parameters<ViteDevServer["middlewares"]["use"]>[1]) => {
+        const apiHandlerModule = await server.ssrLoadModule("/server/washoff/api-handler.ts");
+        const requestHandler = apiHandlerModule.createWashoffApiHandler({
+          getRuntime,
+          ensureWorkerLoop,
+          logger,
+          metrics,
+        });
+
+        return requestHandler(request, response);
+      };
 
       server.httpServer?.once("close", () => {
         stopWorkerLoop?.();

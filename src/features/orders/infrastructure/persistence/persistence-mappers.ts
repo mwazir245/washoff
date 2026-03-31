@@ -17,18 +17,29 @@ import type {
 } from "@/features/content/model/platform-content";
 import {
   AssignmentStatus,
+  HotelInvoiceStatus,
   NotificationChannel,
   NotificationStatus,
   OnboardingStatus,
   OrderAssignmentMode,
   OrderPriority,
   OrderStatus,
+  PlatformServiceCurrentStatus,
+  ProviderStatementStatus,
   ProviderCapacityStatus,
+  ProviderServiceProposalStatus,
   ServiceBillingUnit,
   ServiceCategory,
+  ServicePricingUnit,
   SettlementStatus,
   SLACheckpoint,
   SLAStatus,
+  hotelInvoiceStatusLabelsAr,
+  providerStatementStatusLabelsAr,
+  getServiceTypeLabelAr,
+  getServiceTypeLabelEn,
+  providerServiceCurrentStatusLabelsAr,
+  providerServiceProposalStatusLabelsAr,
 } from "@/features/orders/model";
 import type {
   PlatformSettings,
@@ -36,11 +47,14 @@ import type {
 } from "@/features/platform-settings/model/platform-settings";
 import type {
   Assignment,
+  HotelInvoice,
   AssignmentHistory,
   HotelProfile,
   LaundryOrder,
   MatchingLog,
   Notification,
+  PlatformProduct,
+  ProviderSettlementStatement,
   ProviderCapacity,
   ProviderPerformanceStats,
   ProviderProfile,
@@ -49,7 +63,16 @@ import type {
   Settlement,
   SLAHistory,
 } from "@/features/orders/model";
-import { buildHotelDocumentDownloadPath } from "@/features/orders/model";
+import type {
+  FinancialDocumentPartySnapshot,
+  HotelInvoiceOrderLine,
+  OrderFinancialSnapshot,
+  ProviderStatementOrderLine,
+} from "@/features/orders/model/finance";
+import {
+  buildHotelDocumentDownloadPath,
+  buildProviderDocumentDownloadPath,
+} from "@/features/orders/model";
 import type {
   OrderItem,
   OrderPartySnapshot,
@@ -68,12 +91,17 @@ import type {
   AssignmentHistoryRecord,
   AssignmentRecord,
   HotelRecord,
+  HotelInvoiceOrderLineRecord,
+  HotelInvoiceRecord,
   MatchingLogRecord,
   NotificationRecord,
   OrderAggregateRecordSet,
   OrderItemRecord,
   OrderRecord,
+  PlatformProductRecord,
   PlatformPersistenceSnapshot,
+  ProviderStatementOrderLineRecord,
+  ProviderStatementRecord,
   ProviderAggregateRecordSet,
   ProviderCapabilityRecord,
   ProviderCapacityRecord,
@@ -97,6 +125,7 @@ const deserialize = <Value,>(value: string | undefined, fallback: Value): Value 
 
 const mapPartySnapshot = (snapshot: OrderPartySnapshot) => serialize(snapshot);
 const mapLocalizedText = (ar: string, en?: string) => ({ ar, en });
+const mapFinancialPartySnapshot = (snapshot: FinancialDocumentPartySnapshot) => serialize(snapshot);
 
 export const toAccountRecord = (account: StoredAccount): AccountRecord => ({
   id: account.id,
@@ -175,6 +204,10 @@ export const toPlatformSettingsRecord = (
   site_name_en: settings.siteNameEn,
   site_tagline_ar: settings.siteTaglineAr,
   site_tagline_en: settings.siteTaglineEn,
+  seller_legal_name_ar: settings.sellerLegalNameAr,
+  seller_vat_number: settings.sellerVatNumber,
+  seller_address_ar: settings.sellerAddressAr,
+  seller_city_ar: settings.sellerCityAr,
   mail_from_name_ar: settings.mailFromNameAr,
   mail_from_email: settings.mailFromEmail,
   support_email: settings.supportEmail,
@@ -286,20 +319,47 @@ export const toHotelRecord = (hotel: HotelProfile): HotelRecord => ({
   updated_at: hotel.updatedAt,
 });
 
-export const toServiceRecord = (service: ServiceCatalogItem): ServiceRecord => ({
-  id: service.id,
-  code: service.code,
-  name_ar: service.name.ar,
-  name_en: service.name.en,
-  description_ar: service.description?.ar,
-  description_en: service.description?.en,
-  category: service.category,
-  billing_unit: service.billingUnit,
-  default_unit_price_sar: service.defaultUnitPriceSar,
-  default_turnaround_hours: service.defaultTurnaroundHours,
-  supports_rush: service.supportsRush,
-  active: service.active,
+export const toPlatformProductRecord = (product: PlatformProduct): PlatformProductRecord => ({
+  id: product.id,
+  code: product.code,
+  name_ar: product.name.ar,
+  name_en: product.name.en,
+  active: product.active,
+  sort_order: product.sortOrder,
+  created_at: product.createdAt,
+  updated_at: product.updatedAt,
 });
+
+export const toServiceRecord = (service: ServiceCatalogItem): ServiceRecord => {
+  const matrixService = service as ServiceCatalogItem & {
+    sortOrder?: number;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+
+  return {
+    id: service.id,
+    code: service.code,
+    name_ar: service.name.ar,
+    name_en: service.name.en,
+    description_ar: service.description?.ar,
+    description_en: service.description?.en,
+    category: service.category,
+    billing_unit: service.billingUnit,
+    default_unit_price_sar: service.defaultUnitPriceSar,
+    default_turnaround_hours: service.defaultTurnaroundHours,
+    supports_rush: service.supportsRush,
+    active: service.active,
+    product_id: service.productId,
+    service_type: service.serviceType,
+    pricing_unit: service.pricingUnit,
+    suggested_price_sar: service.suggestedPriceSar,
+    is_available: service.isAvailable,
+    sort_order: matrixService.sortOrder,
+    created_at: matrixService.createdAt,
+    updated_at: matrixService.updatedAt,
+  };
+};
 
 export const toProviderRecord = (provider: ProviderProfile): ProviderRecord => ({
   id: provider.id,
@@ -308,6 +368,7 @@ export const toProviderRecord = (provider: ProviderProfile): ProviderRecord => (
   legal_name_en: provider.legalName.en,
   display_name_ar: provider.displayName.ar,
   display_name_en: provider.displayName.en,
+  legal_entity_name: provider.businessProfile.legalEntityName,
   country_code: provider.address.countryCode,
   city: provider.address.city,
   district: provider.address.district,
@@ -319,6 +380,25 @@ export const toProviderRecord = (provider: ProviderProfile): ProviderRecord => (
   contact_name: provider.contact.name,
   contact_phone: provider.contact.phone,
   contact_email: provider.contact.email,
+  business_phone: provider.businessProfile.phone,
+  business_email: provider.businessProfile.email,
+  address_text: provider.locationProfile.addressText,
+  tax_registration_number: provider.businessProfile.taxRegistrationNumber,
+  commercial_registration_number: provider.businessProfile.commercialRegistrationNumber,
+  commercial_registration_file_json: serialize(provider.businessProfile.commercialRegistrationFile),
+  other_services_text: provider.operatingProfile.otherServicesText,
+  pickup_lead_time_hours: provider.operatingProfile.pickupLeadTimeHours,
+  execution_time_hours: provider.operatingProfile.executionTimeHours,
+  delivery_time_hours: provider.operatingProfile.deliveryTimeHours,
+  working_days_json: serialize(provider.operatingProfile.workingDays),
+  working_hours_from: provider.operatingProfile.workingHoursFrom,
+  working_hours_to: provider.operatingProfile.workingHoursTo,
+  bank_name: provider.financialProfile.bankName,
+  iban: provider.financialProfile.iban,
+  bank_account_holder_name: provider.financialProfile.accountHolderName,
+  account_setup_name: provider.accountSetupProfile.fullName,
+  account_setup_phone: provider.accountSetupProfile.phone,
+  account_setup_email: provider.accountSetupProfile.email,
   service_area_cities_json: serialize(provider.serviceAreaCities),
   active: provider.active,
   notes_ar: provider.notesAr,
@@ -333,22 +413,39 @@ export const toProviderRecord = (provider: ProviderProfile): ProviderRecord => (
 });
 
 export const toProviderCapabilityRecords = (provider: ProviderProfile): ProviderCapabilityRecord[] =>
-  provider.capabilities.map((capability) => ({
-    provider_id: provider.id,
-    service_id: capability.serviceId,
-    service_name_ar: capability.serviceName.ar,
-    service_name_en: capability.serviceName.en,
-    active: capability.active,
-    unit_price_sar: capability.unitPriceSar,
-    max_daily_kg: capability.maxDailyKg,
-    max_single_order_kg: capability.maxSingleOrderKg,
-    rush_supported: capability.rushSupported,
-    supported_city_codes_json: serialize(capability.supportedCityCodes),
-    default_turnaround_hours: capability.defaultTurnaroundHours,
-    minimum_pickup_lead_hours: capability.minimumPickupLeadHours,
-    pickup_window_start_hour: capability.pickupWindow.startHour,
-    pickup_window_end_hour: capability.pickupWindow.endHour,
-  }));
+  provider.capabilities.map((capability) => {
+    const offering = provider.serviceOfferings.find((entry) => entry.serviceId === capability.serviceId);
+
+    return {
+      provider_id: provider.id,
+      service_id: capability.serviceId,
+      service_name_ar: capability.serviceName.ar,
+      service_name_en: capability.serviceName.en,
+      active: capability.active,
+      unit_price_sar: capability.unitPriceSar,
+      max_daily_kg: capability.maxDailyKg,
+      max_single_order_kg: capability.maxSingleOrderKg,
+      rush_supported: capability.rushSupported,
+      supported_city_codes_json: serialize(capability.supportedCityCodes),
+      default_turnaround_hours: capability.defaultTurnaroundHours,
+      minimum_pickup_lead_hours: capability.minimumPickupLeadHours,
+      pickup_window_start_hour: capability.pickupWindow.startHour,
+      pickup_window_end_hour: capability.pickupWindow.endHour,
+      current_approved_price_sar: offering?.currentApprovedPriceSar,
+      current_status: offering?.currentStatus ?? (capability.active ? PlatformServiceCurrentStatus.Active : PlatformServiceCurrentStatus.Inactive),
+      proposed_price_sar: offering?.proposedPriceSar,
+      proposed_status: offering?.proposedStatus,
+      proposed_submitted_at: offering?.proposedSubmittedAt,
+      approved_at: offering?.approvedAt,
+      approved_by_account_id: offering?.approvedByAccountId,
+      approved_by_role: offering?.approvedByRole,
+      rejection_reason_ar: offering?.rejectionReasonAr,
+      active_matrix: offering?.activeMatrix ?? true,
+      available_matrix: offering?.availableMatrix ?? true,
+      created_at: offering?.createdAt ?? provider.createdAt,
+      updated_at: offering?.updatedAt ?? provider.updatedAt,
+    };
+  });
 
 export const toProviderCapacityRecord = (capacity: ProviderCapacity): ProviderCapacityRecord => ({
   provider_id: capacity.providerId,
@@ -390,6 +487,7 @@ export const toProviderAggregateRecordSet = (provider: ProviderProfile): Provide
 export const toOrderRecord = (order: LaundryOrder): OrderRecord => ({
   id: order.id,
   hotel_id: order.hotelId,
+  room_number: order.roomNumber,
   provider_id: order.providerId,
   hotel_snapshot_json: mapPartySnapshot(order.hotelSnapshot),
   provider_snapshot_json: order.providerSnapshot ? mapPartySnapshot(order.providerSnapshot) : undefined,
@@ -402,6 +500,16 @@ export const toOrderRecord = (order: LaundryOrder): OrderRecord => ({
   total_item_count: order.totalItemCount,
   pickup_at: order.pickupAt,
   notes_ar: order.notesAr,
+  hotel_financial_snapshot_json: order.hotelFinancialSnapshot
+    ? serialize(order.hotelFinancialSnapshot)
+    : undefined,
+  provider_financial_snapshot_json: order.providerFinancialSnapshot
+    ? serialize(order.providerFinancialSnapshot)
+    : undefined,
+  hotel_invoice_id: order.hotelInvoiceId,
+  provider_statement_id: order.providerStatementId,
+  billed_at: order.billedAt,
+  settled_at: order.settledAt,
   status_updated_at: order.statusUpdatedAt,
   progress_percent: order.progressPercent,
   active_assignment_id: order.activeAssignmentId,
@@ -560,9 +668,16 @@ export const buildPlatformPersistenceSnapshot = ({
   platformContentEntries = [],
   platformContentAudit = [],
   hotels,
+  platformProducts = [],
+  hotelContractPrices = [],
   providers,
   services,
   orders,
+  hotelInvoices = [],
+  providerStatements = [],
+  storedObjects = [],
+  financeAuditEvents = [],
+  backgroundJobs = [],
   notifications = [],
 }: {
   accounts?: StoredAccount[];
@@ -573,9 +688,65 @@ export const buildPlatformPersistenceSnapshot = ({
   platformContentEntries?: PlatformContentEntry[];
   platformContentAudit?: PlatformContentAuditEntry[];
   hotels: HotelProfile[];
+  platformProducts?: PlatformProduct[];
+  hotelContractPrices?: Array<{
+    hotelId: string;
+    serviceId: string;
+    unitPriceSar: number;
+    active: boolean;
+    createdAt: string;
+    updatedAt: string;
+  }>;
   providers: ProviderProfile[];
   services: ServiceCatalogItem[];
   orders: LaundryOrder[];
+  hotelInvoices?: HotelInvoice[];
+  providerStatements?: ProviderSettlementStatement[];
+  storedObjects?: Array<{
+    id: string;
+    storageProvider: string;
+    storageKey: string;
+    logicalBucket: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    checksumSha256: string;
+    contentBase64: string;
+    metadataJson?: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  financeAuditEvents?: Array<{
+    id: string;
+    entityType: string;
+    entityId: string;
+    action: string;
+    previousStatus?: string;
+    nextStatus: string;
+    actorAccountId?: string;
+    actorRole?: string;
+    notesAr?: string;
+    metadataJson?: string;
+    occurredAt: string;
+  }>;
+  backgroundJobs?: Array<{
+    id: string;
+    queueName: string;
+    jobType: string;
+    lockKey: string;
+    status: string;
+    payloadJson: string;
+    attempts: number;
+    maxAttempts: number;
+    nextRunAt: string;
+    lockedAt?: string;
+    lockOwner?: string;
+    completedAt?: string;
+    lastErrorAr?: string;
+    idempotencyKey?: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
   notifications?: Notification[];
 }): PlatformPersistenceSnapshot => ({
   accounts: accounts.map((account) => toAccountRecord(account)),
@@ -586,9 +757,71 @@ export const buildPlatformPersistenceSnapshot = ({
   platform_content_entries: platformContentEntries.map((entry) => toPlatformContentEntryRecord(entry)),
   platform_content_audit: platformContentAudit.map((entry) => toPlatformContentAuditRecord(entry)),
   hotels: hotels.map((hotel) => toHotelRecord(hotel)),
+  platform_products: platformProducts.map((product) => toPlatformProductRecord(product)),
   services: services.map((service) => toServiceRecord(service)),
+  hotel_contract_prices: hotelContractPrices.map((entry) => ({
+    hotel_id: entry.hotelId,
+    service_id: entry.serviceId,
+    unit_price_sar: entry.unitPriceSar,
+    active: entry.active,
+    created_at: entry.createdAt,
+    updated_at: entry.updatedAt,
+  })),
   providers: providers.map((provider) => toProviderAggregateRecordSet(provider)),
   orders: orders.map((order) => toOrderAggregateRecordSet(order)),
+  hotel_invoices: hotelInvoices.map((invoice) => toHotelInvoiceRecord(invoice)),
+  hotel_invoice_order_lines: hotelInvoices.flatMap((invoice) =>
+    invoice.lines.map((line) => toHotelInvoiceOrderLineRecord(line)),
+  ),
+  provider_statements: providerStatements.map((statement) => toProviderStatementRecord(statement)),
+  provider_statement_order_lines: providerStatements.flatMap((statement) =>
+    statement.lines.map((line) => toProviderStatementOrderLineRecord(line)),
+  ),
+  stored_objects: storedObjects.map((entry) => ({
+    id: entry.id,
+    storage_provider: entry.storageProvider,
+    storage_key: entry.storageKey,
+    logical_bucket: entry.logicalBucket,
+    file_name: entry.fileName,
+    mime_type: entry.mimeType,
+    size_bytes: entry.sizeBytes,
+    checksum_sha256: entry.checksumSha256,
+    content_base64: entry.contentBase64,
+    metadata_json: entry.metadataJson,
+    created_at: entry.createdAt,
+    updated_at: entry.updatedAt,
+  })),
+  finance_audit_events: financeAuditEvents.map((entry) => ({
+    id: entry.id,
+    entity_type: entry.entityType,
+    entity_id: entry.entityId,
+    action: entry.action,
+    previous_status: entry.previousStatus,
+    next_status: entry.nextStatus,
+    actor_account_id: entry.actorAccountId,
+    actor_role: entry.actorRole,
+    notes_ar: entry.notesAr,
+    metadata_json: entry.metadataJson,
+    occurred_at: entry.occurredAt,
+  })),
+  background_jobs: backgroundJobs.map((entry) => ({
+    id: entry.id,
+    queue_name: entry.queueName,
+    job_type: entry.jobType,
+    lock_key: entry.lockKey,
+    status: entry.status,
+    payload_json: entry.payloadJson,
+    attempts: entry.attempts,
+    max_attempts: entry.maxAttempts,
+    next_run_at: entry.nextRunAt,
+    locked_at: entry.lockedAt,
+    lock_owner: entry.lockOwner,
+    completed_at: entry.completedAt,
+    last_error_ar: entry.lastErrorAr,
+    idempotency_key: entry.idempotencyKey,
+    created_at: entry.createdAt,
+    updated_at: entry.updatedAt,
+  })),
   notifications: notifications.map((notification) => toNotificationRecord(notification)),
 });
 
@@ -763,6 +996,10 @@ export const fromPlatformSettingsRecord = (
   siteNameEn: record.site_name_en,
   siteTaglineAr: record.site_tagline_ar,
   siteTaglineEn: record.site_tagline_en,
+  sellerLegalNameAr: record.seller_legal_name_ar,
+  sellerVatNumber: record.seller_vat_number,
+  sellerAddressAr: record.seller_address_ar,
+  sellerCityAr: record.seller_city_ar,
   mailFromNameAr: record.mail_from_name_ar,
   mailFromEmail: record.mail_from_email,
   supportEmail: record.support_email,
@@ -828,21 +1065,49 @@ export const fromPlatformContentAuditRecord = (
   notesAr: record.notes_ar,
 });
 
-export const fromServiceRecord = (record: ServiceRecord): ServiceCatalogItem => ({
+export const fromPlatformProductRecord = (
+  record: PlatformProductRecord,
+): PlatformProduct => ({
   id: record.id,
   code: record.code,
   name: mapLocalizedText(record.name_ar, record.name_en),
-  description:
-    record.description_ar || record.description_en
-      ? mapLocalizedText(record.description_ar ?? "", record.description_en)
-      : undefined,
-  category: record.category as ServiceCategory,
-  billingUnit: record.billing_unit as ServiceBillingUnit,
-  defaultUnitPriceSar: record.default_unit_price_sar,
-  defaultTurnaroundHours: record.default_turnaround_hours,
-  supportsRush: record.supports_rush,
   active: record.active,
+  sortOrder: record.sort_order,
+  createdAt: record.created_at,
+  updatedAt: record.updated_at,
 });
+
+export const fromServiceRecord = (record: ServiceRecord): ServiceCatalogItem => {
+  const service = {
+    id: record.id,
+    code: record.code,
+    name: mapLocalizedText(record.name_ar, record.name_en),
+    description:
+      record.description_ar || record.description_en
+        ? mapLocalizedText(record.description_ar ?? "", record.description_en)
+        : undefined,
+    category: record.category as ServiceCategory,
+    billingUnit: record.billing_unit as ServiceBillingUnit,
+    defaultUnitPriceSar: record.default_unit_price_sar,
+    defaultTurnaroundHours: record.default_turnaround_hours,
+    supportsRush: record.supports_rush,
+    active: record.active,
+    productId: record.product_id,
+    serviceType: record.service_type as ServiceCatalogItem["serviceType"] | undefined,
+    pricingUnit: record.pricing_unit as ServicePricingUnit | undefined,
+    suggestedPriceSar: record.suggested_price_sar,
+    isAvailable: record.is_available,
+    sortOrder: record.sort_order,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at,
+  } satisfies ServiceCatalogItem & {
+    sortOrder?: number;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+
+  return service;
+};
 
 export const fromProviderCapacityRecord = (record: ProviderCapacityRecord): ProviderCapacity => ({
   providerId: record.provider_id,
@@ -876,7 +1141,62 @@ export const fromProviderPerformanceStatsRecord = (
 
 export const fromProviderAggregateRecordSet = (
   aggregate: ProviderAggregateRecordSet,
-): ProviderProfile => ({
+  serviceRecordsById: ReadonlyMap<string, ServiceRecord> = new Map(),
+  productRecordsById: ReadonlyMap<string, PlatformProductRecord> = new Map(),
+): ProviderProfile => {
+  const serviceOfferings = aggregate.capabilities
+    .map((capability) => {
+      const serviceRecord = serviceRecordsById.get(capability.service_id);
+      const productRecord = serviceRecord?.product_id
+        ? productRecordsById.get(serviceRecord.product_id)
+        : undefined;
+      const serviceType = serviceRecord?.service_type as ProviderProfile["serviceOfferings"][number]["serviceType"] | undefined;
+      const pricingUnit = serviceRecord?.pricing_unit as ServicePricingUnit | undefined;
+      const currentStatus =
+        (capability.current_status as PlatformServiceCurrentStatus | undefined) ??
+        (capability.active ? PlatformServiceCurrentStatus.Active : PlatformServiceCurrentStatus.Inactive);
+      const proposedStatus = capability.proposed_status as ProviderServiceProposalStatus | undefined;
+
+      if (!serviceRecord || !productRecord || !serviceType || !pricingUnit) {
+        return undefined;
+      }
+
+      return {
+        id: `offering-${aggregate.provider.id}-${capability.service_id}`,
+        providerId: aggregate.provider.id,
+        serviceId: capability.service_id,
+        productId: productRecord.id,
+        productName: mapLocalizedText(productRecord.name_ar, productRecord.name_en),
+        serviceType,
+        serviceTypeName: {
+          ar: getServiceTypeLabelAr(serviceType),
+          en: getServiceTypeLabelEn(serviceType),
+        },
+        pricingUnit,
+        currentApprovedPriceSar:
+          capability.current_approved_price_sar ?? (capability.active ? capability.unit_price_sar : undefined),
+        currentStatus,
+        currentStatusLabelAr: providerServiceCurrentStatusLabelsAr[currentStatus],
+        proposedPriceSar: capability.proposed_price_sar,
+        proposedStatus,
+        proposedStatusLabelAr: proposedStatus
+          ? providerServiceProposalStatusLabelsAr[proposedStatus]
+          : undefined,
+        proposedSubmittedAt: capability.proposed_submitted_at,
+        approvedAt: capability.approved_at,
+        approvedByAccountId: capability.approved_by_account_id,
+        approvedByRole: capability.approved_by_role,
+        rejectionReasonAr: capability.rejection_reason_ar,
+        suggestedPriceSar: serviceRecord.suggested_price_sar,
+        activeMatrix: capability.active_matrix ?? serviceRecord.active,
+        availableMatrix: capability.available_matrix ?? serviceRecord.is_available ?? true,
+        createdAt: capability.created_at ?? aggregate.provider.created_at,
+        updatedAt: capability.updated_at ?? aggregate.provider.updated_at,
+      };
+    })
+    .filter((offering): offering is ProviderProfile["serviceOfferings"][number] => Boolean(offering));
+
+  return {
   id: aggregate.provider.id,
   code: aggregate.provider.code,
   legalName: mapLocalizedText(aggregate.provider.legal_name_ar, aggregate.provider.legal_name_en),
@@ -897,6 +1217,55 @@ export const fromProviderAggregateRecordSet = (
     email: aggregate.provider.contact_email,
   },
   serviceAreaCities: deserialize<string[]>(aggregate.provider.service_area_cities_json, []),
+  businessProfile: {
+    legalEntityName: aggregate.provider.legal_entity_name,
+    commercialRegistrationNumber: aggregate.provider.commercial_registration_number ?? "",
+    taxRegistrationNumber: aggregate.provider.tax_registration_number ?? "",
+    phone: aggregate.provider.business_phone ?? aggregate.provider.contact_phone ?? "",
+    email: aggregate.provider.business_email ?? aggregate.provider.contact_email ?? "",
+    commercialRegistrationFile: deserialize(
+      aggregate.provider.commercial_registration_file_json,
+      {
+        kind: "commercial_registration",
+        fileName: "commercial-registration.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 0,
+        uploadedAt: aggregate.provider.submitted_at ?? aggregate.provider.created_at,
+        storageKey: `legacy://providers/${aggregate.provider.id}/commercial-registration`,
+        downloadPath: buildProviderDocumentDownloadPath(aggregate.provider.id),
+      },
+    ),
+  },
+  locationProfile: {
+    addressText: aggregate.provider.address_text ?? aggregate.provider.line_1 ?? "",
+  },
+  operatingProfile: {
+    otherServicesText: aggregate.provider.other_services_text,
+    pickupLeadTimeHours: aggregate.provider.pickup_lead_time_hours ?? 2,
+    executionTimeHours: aggregate.provider.execution_time_hours ?? 24,
+    deliveryTimeHours: aggregate.provider.delivery_time_hours ?? 4,
+    workingDays: deserialize(aggregate.provider.working_days_json, [
+      "sunday",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+    ]),
+    workingHoursFrom: aggregate.provider.working_hours_from ?? "08:00",
+    workingHoursTo: aggregate.provider.working_hours_to ?? "22:00",
+  },
+  financialProfile: {
+    bankName: aggregate.provider.bank_name ?? "غير محدد",
+    iban: aggregate.provider.iban ?? "",
+    accountHolderName:
+      aggregate.provider.bank_account_holder_name ?? aggregate.provider.legal_entity_name ?? aggregate.provider.legal_name_ar,
+  },
+  accountSetupProfile: {
+    fullName: aggregate.provider.account_setup_name ?? aggregate.provider.contact_name ?? "",
+    phone: aggregate.provider.account_setup_phone ?? aggregate.provider.contact_phone ?? "",
+    email: aggregate.provider.account_setup_email ?? aggregate.provider.contact_email ?? "",
+  },
+  serviceOfferings,
   capabilities: aggregate.capabilities.map((capability) => ({
     serviceId: capability.service_id,
     serviceName: mapLocalizedText(capability.service_name_ar, capability.service_name_en),
@@ -927,7 +1296,8 @@ export const fromProviderAggregateRecordSet = (
   },
   createdAt: aggregate.provider.created_at,
   updatedAt: aggregate.provider.updated_at,
-});
+  };
+};
 
 export const fromOrderItemRecord = (record: OrderItemRecord): OrderItem => ({
   id: record.id,
@@ -1082,6 +1452,165 @@ export const fromSettlementRecord = (
   paidAt: record.paid_at,
 });
 
+export const toHotelInvoiceRecord = (invoice: HotelInvoice): HotelInvoiceRecord => ({
+  id: invoice.id,
+  invoice_number: invoice.invoiceNumber,
+  hotel_id: invoice.hotelId,
+  invoice_date: invoice.invoiceDate,
+  currency_code: invoice.currencyCode,
+  status: invoice.status,
+  order_count: invoice.orderCount,
+  subtotal_ex_vat_sar: invoice.subtotalExVatSar,
+  vat_amount_sar: invoice.vatAmountSar,
+  total_inc_vat_sar: invoice.totalIncVatSar,
+  seller_json: mapFinancialPartySnapshot(invoice.seller),
+  buyer_json: mapFinancialPartySnapshot(invoice.buyer),
+  pdf_object_id: invoice.pdf?.objectId,
+  created_at: invoice.createdAt,
+  updated_at: invoice.updatedAt,
+  issued_at: invoice.issuedAt,
+  collected_at: invoice.collectedAt,
+  collected_by_account_id: invoice.collectedByAccountId,
+  collected_by_role: invoice.collectedByRole,
+});
+
+export const toHotelInvoiceOrderLineRecord = (
+  line: HotelInvoiceOrderLine,
+): HotelInvoiceOrderLineRecord => ({
+  id: line.id,
+  invoice_id: line.invoiceId,
+  order_id: line.orderId,
+  room_number: line.roomNumber,
+  order_subtotal_ex_vat_sar: line.orderSubtotalExVatSar,
+  order_vat_amount_sar: line.orderVatAmountSar,
+  order_total_inc_vat_sar: line.orderTotalIncVatSar,
+});
+
+export const fromHotelInvoiceRecord = (
+  record: HotelInvoiceRecord,
+  lines: HotelInvoiceOrderLineRecord[],
+): HotelInvoice => ({
+  id: record.id,
+  invoiceNumber: record.invoice_number,
+  hotelId: record.hotel_id,
+  invoiceDate: record.invoice_date,
+  currencyCode: record.currency_code as HotelInvoice["currencyCode"],
+  status: record.status as HotelInvoiceStatus,
+  statusLabelAr: hotelInvoiceStatusLabelsAr[record.status as HotelInvoiceStatus],
+  orderCount: record.order_count,
+  subtotalExVatSar: record.subtotal_ex_vat_sar,
+  vatAmountSar: record.vat_amount_sar,
+  totalIncVatSar: record.total_inc_vat_sar,
+  seller: deserialize<FinancialDocumentPartySnapshot>(record.seller_json, {
+    id: "",
+    displayNameAr: "",
+  }),
+  buyer: deserialize<FinancialDocumentPartySnapshot>(record.buyer_json, {
+    id: record.hotel_id,
+    displayNameAr: "",
+  }),
+  createdAt: record.created_at,
+  updatedAt: record.updated_at,
+  issuedAt: record.issued_at,
+  collectedAt: record.collected_at,
+  collectedByAccountId: record.collected_by_account_id,
+  collectedByRole: record.collected_by_role as HotelInvoice["collectedByRole"],
+  pdf: record.pdf_object_id
+    ? {
+        objectId: record.pdf_object_id,
+        downloadPath: "",
+        generatedAt: record.updated_at,
+        qrPayloadAr: "",
+      }
+    : undefined,
+  lines: lines.map((line) => ({
+    id: line.id,
+    invoiceId: line.invoice_id,
+    orderId: line.order_id,
+    roomNumber: line.room_number,
+    orderSubtotalExVatSar: line.order_subtotal_ex_vat_sar,
+    orderVatAmountSar: line.order_vat_amount_sar,
+    orderTotalIncVatSar: line.order_total_inc_vat_sar,
+  })),
+});
+
+export const toProviderStatementRecord = (
+  statement: ProviderSettlementStatement,
+): ProviderStatementRecord => ({
+  id: statement.id,
+  statement_number: statement.statementNumber,
+  provider_id: statement.providerId,
+  statement_date: statement.statementDate,
+  currency_code: statement.currencyCode,
+  status: statement.status,
+  order_count: statement.orderCount,
+  subtotal_ex_vat_sar: statement.subtotalExVatSar,
+  vat_amount_sar: statement.vatAmountSar,
+  total_inc_vat_sar: statement.totalIncVatSar,
+  provider_json: mapFinancialPartySnapshot(statement.provider),
+  pdf_object_id: statement.pdf?.objectId,
+  created_at: statement.createdAt,
+  updated_at: statement.updatedAt,
+  paid_at: statement.paidAt,
+  paid_by_account_id: statement.paidByAccountId,
+  paid_by_role: statement.paidByRole,
+});
+
+export const toProviderStatementOrderLineRecord = (
+  line: ProviderStatementOrderLine,
+): ProviderStatementOrderLineRecord => ({
+  id: line.id,
+  statement_id: line.statementId,
+  order_id: line.orderId,
+  room_number: line.roomNumber,
+  provider_subtotal_ex_vat_sar: line.providerSubtotalExVatSar,
+  provider_vat_amount_sar: line.providerVatAmountSar,
+  provider_total_inc_vat_sar: line.providerTotalIncVatSar,
+});
+
+export const fromProviderStatementRecord = (
+  record: ProviderStatementRecord,
+  lines: ProviderStatementOrderLineRecord[],
+): ProviderSettlementStatement => ({
+  id: record.id,
+  statementNumber: record.statement_number,
+  providerId: record.provider_id,
+  statementDate: record.statement_date,
+  currencyCode: record.currency_code as ProviderSettlementStatement["currencyCode"],
+  status: record.status as ProviderStatementStatus,
+  statusLabelAr: providerStatementStatusLabelsAr[record.status as ProviderStatementStatus],
+  orderCount: record.order_count,
+  subtotalExVatSar: record.subtotal_ex_vat_sar,
+  vatAmountSar: record.vat_amount_sar,
+  totalIncVatSar: record.total_inc_vat_sar,
+  provider: deserialize<FinancialDocumentPartySnapshot>(record.provider_json, {
+    id: record.provider_id,
+    displayNameAr: "",
+  }),
+  createdAt: record.created_at,
+  updatedAt: record.updated_at,
+  paidAt: record.paid_at,
+  paidByAccountId: record.paid_by_account_id,
+  paidByRole: record.paid_by_role as ProviderSettlementStatement["paidByRole"],
+  pdf: record.pdf_object_id
+    ? {
+        objectId: record.pdf_object_id,
+        downloadPath: "",
+        generatedAt: record.updated_at,
+        qrPayloadAr: "",
+      }
+    : undefined,
+  lines: lines.map((line) => ({
+    id: line.id,
+    statementId: line.statement_id,
+    orderId: line.order_id,
+    roomNumber: line.room_number,
+    providerSubtotalExVatSar: line.provider_subtotal_ex_vat_sar,
+    providerVatAmountSar: line.provider_vat_amount_sar,
+    providerTotalIncVatSar: line.provider_total_inc_vat_sar,
+  })),
+});
+
 export const fromNotificationRecord = (record: NotificationRecord): Notification => ({
   id: record.id,
   recipientRole: record.recipient_role as Notification["recipientRole"],
@@ -1126,11 +1655,24 @@ export const fromOrderAggregateRecordSet = (aggregate: OrderAggregateRecordSet):
     status: aggregate.order.status as OrderStatus,
     priority: aggregate.order.priority as OrderPriority,
     items: aggregate.items.map((item) => fromOrderItemRecord(item)),
+    roomNumber: aggregate.order.room_number,
     totalItemCount: aggregate.order.total_item_count,
     currency: aggregate.order.currency as LaundryOrder["currency"],
     estimatedSubtotalSar: aggregate.order.estimated_subtotal_sar,
     pickupAt: aggregate.order.pickup_at,
     notesAr: aggregate.order.notes_ar,
+    hotelFinancialSnapshot: deserialize<OrderFinancialSnapshot | undefined>(
+      aggregate.order.hotel_financial_snapshot_json,
+      undefined,
+    ),
+    providerFinancialSnapshot: deserialize<OrderFinancialSnapshot | undefined>(
+      aggregate.order.provider_financial_snapshot_json,
+      undefined,
+    ),
+    hotelInvoiceId: aggregate.order.hotel_invoice_id,
+    providerStatementId: aggregate.order.provider_statement_id,
+    billedAt: aggregate.order.billed_at,
+    settledAt: aggregate.order.settled_at,
     statusUpdatedAt: aggregate.order.status_updated_at,
     progressPercent: aggregate.order.progress_percent,
     activeAssignmentId: aggregate.order.active_assignment_id,
@@ -1147,23 +1689,110 @@ export const fromOrderAggregateRecordSet = (aggregate: OrderAggregateRecordSet):
   };
 };
 
-export const restorePlatformDomainSnapshot = (snapshot: PlatformPersistenceSnapshot) => ({
-  accounts: snapshot.accounts.map((account) => fromAccountRecord(account)),
-  accountSessions: snapshot.account_sessions.map((session) => fromAccountSessionRecord(session)),
-  identityAuditEvents: snapshot.identity_audit_events.map((event) => fromIdentityAuditEventRecord(event)),
-  platformSettings: snapshot.platform_settings.map((entry) => fromPlatformSettingsRecord(entry)),
-  platformSettingsAudit: snapshot.platform_settings_audit.map((entry) =>
-    fromPlatformSettingsAuditRecord(entry),
-  ),
-  platformContentEntries: snapshot.platform_content_entries.map((entry) =>
-    fromPlatformContentEntryRecord(entry),
-  ),
-  platformContentAudit: snapshot.platform_content_audit.map((entry) =>
-    fromPlatformContentAuditRecord(entry),
-  ),
-  hotels: snapshot.hotels.map((hotel) => fromHotelRecord(hotel)),
-  services: snapshot.services.map((service) => fromServiceRecord(service)),
-  providers: snapshot.providers.map((provider) => fromProviderAggregateRecordSet(provider)),
-  orders: snapshot.orders.map((order) => fromOrderAggregateRecordSet(order)),
-  notifications: snapshot.notifications.map((notification) => fromNotificationRecord(notification)),
-});
+export const restorePlatformDomainSnapshot = (snapshot: PlatformPersistenceSnapshot) => {
+  const platformProducts = snapshot.platform_products.map((product) => fromPlatformProductRecord(product));
+  const services = snapshot.services.map((service) => fromServiceRecord(service));
+  const serviceRecordsById = new Map(snapshot.services.map((service) => [service.id, service]));
+  const productRecordsById = new Map(snapshot.platform_products.map((product) => [product.id, product]));
+  const hotelInvoiceLinesByInvoiceId = new Map<string, HotelInvoiceOrderLineRecord[]>();
+  const providerStatementLinesByStatementId = new Map<string, ProviderStatementOrderLineRecord[]>();
+  const hotelInvoices = snapshot.hotel_invoices ?? [];
+  const hotelInvoiceLines = snapshot.hotel_invoice_order_lines ?? [];
+  const providerStatements = snapshot.provider_statements ?? [];
+  const providerStatementLines = snapshot.provider_statement_order_lines ?? [];
+
+  hotelInvoiceLines.forEach((line) => {
+    const collection = hotelInvoiceLinesByInvoiceId.get(line.invoice_id) ?? [];
+    collection.push(line);
+    hotelInvoiceLinesByInvoiceId.set(line.invoice_id, collection);
+  });
+
+  providerStatementLines.forEach((line) => {
+    const collection = providerStatementLinesByStatementId.get(line.statement_id) ?? [];
+    collection.push(line);
+    providerStatementLinesByStatementId.set(line.statement_id, collection);
+  });
+
+  return {
+    accounts: snapshot.accounts.map((account) => fromAccountRecord(account)),
+    accountSessions: snapshot.account_sessions.map((session) => fromAccountSessionRecord(session)),
+    identityAuditEvents: snapshot.identity_audit_events.map((event) => fromIdentityAuditEventRecord(event)),
+    platformSettings: snapshot.platform_settings.map((entry) => fromPlatformSettingsRecord(entry)),
+    platformSettingsAudit: snapshot.platform_settings_audit.map((entry) =>
+      fromPlatformSettingsAuditRecord(entry),
+    ),
+    platformContentEntries: snapshot.platform_content_entries.map((entry) =>
+      fromPlatformContentEntryRecord(entry),
+    ),
+    platformContentAudit: snapshot.platform_content_audit.map((entry) =>
+      fromPlatformContentAuditRecord(entry),
+    ),
+    hotels: snapshot.hotels.map((hotel) => fromHotelRecord(hotel)),
+    platformProducts,
+    services,
+    hotelContractPrices: snapshot.hotel_contract_prices.map((entry) => ({
+      hotelId: entry.hotel_id,
+      serviceId: entry.service_id,
+      unitPriceSar: entry.unit_price_sar,
+      active: entry.active,
+      createdAt: entry.created_at,
+      updatedAt: entry.updated_at,
+    })),
+    providers: snapshot.providers.map((provider) =>
+      fromProviderAggregateRecordSet(provider, serviceRecordsById, productRecordsById),
+    ),
+    orders: snapshot.orders.map((order) => fromOrderAggregateRecordSet(order)),
+    hotelInvoices: hotelInvoices.map((invoice) =>
+      fromHotelInvoiceRecord(invoice, hotelInvoiceLinesByInvoiceId.get(invoice.id) ?? []),
+    ),
+    providerStatements: providerStatements.map((statement) =>
+      fromProviderStatementRecord(statement, providerStatementLinesByStatementId.get(statement.id) ?? []),
+    ),
+    storedObjects: snapshot.stored_objects.map((entry) => ({
+      id: entry.id,
+      storageProvider: entry.storage_provider,
+      storageKey: entry.storage_key,
+      logicalBucket: entry.logical_bucket,
+      fileName: entry.file_name,
+      mimeType: entry.mime_type,
+      sizeBytes: entry.size_bytes,
+      checksumSha256: entry.checksum_sha256,
+      contentBase64: entry.content_base64,
+      metadataJson: entry.metadata_json,
+      createdAt: entry.created_at,
+      updatedAt: entry.updated_at,
+    })),
+    financeAuditEvents: snapshot.finance_audit_events.map((entry) => ({
+      id: entry.id,
+      entityType: entry.entity_type,
+      entityId: entry.entity_id,
+      action: entry.action,
+      previousStatus: entry.previous_status,
+      nextStatus: entry.next_status,
+      actorAccountId: entry.actor_account_id,
+      actorRole: entry.actor_role,
+      notesAr: entry.notes_ar,
+      metadataJson: entry.metadata_json,
+      occurredAt: entry.occurred_at,
+    })),
+    backgroundJobs: snapshot.background_jobs.map((entry) => ({
+      id: entry.id,
+      queueName: entry.queue_name,
+      jobType: entry.job_type,
+      lockKey: entry.lock_key,
+      status: entry.status,
+      payloadJson: entry.payload_json,
+      attempts: entry.attempts,
+      maxAttempts: entry.max_attempts,
+      nextRunAt: entry.next_run_at,
+      lockedAt: entry.locked_at,
+      lockOwner: entry.lock_owner,
+      completedAt: entry.completed_at,
+      lastErrorAr: entry.last_error_ar,
+      idempotencyKey: entry.idempotency_key,
+      createdAt: entry.created_at,
+      updatedAt: entry.updated_at,
+    })),
+    notifications: snapshot.notifications.map((notification) => fromNotificationRecord(notification)),
+  };
+};

@@ -5,15 +5,20 @@ import type {
   Assignment as PrismaAssignmentRecord,
   AssignmentHistory as PrismaAssignmentHistoryRecord,
   Hotel as PrismaHotelRecord,
+  HotelInvoice as PrismaHotelInvoiceRecord,
+  HotelInvoiceOrderLine as PrismaHotelInvoiceOrderLineRecord,
   IdentityAuditEvent as PrismaIdentityAuditEventRecord,
   MatchingLog as PrismaMatchingLogRecord,
   Order as PrismaOrderRecord,
   OrderItem as PrismaOrderItemRecord,
+  PlatformProduct as PrismaPlatformProductRecord,
   PrismaClient,
   Provider as PrismaProviderRecord,
   ProviderCapability as PrismaProviderCapabilityRecord,
   ProviderCapacity as PrismaProviderCapacityRecord,
   ProviderPerformanceStats as PrismaProviderPerformanceStatsRecord,
+  ProviderStatement as PrismaProviderStatementRecord,
+  ProviderStatementOrderLine as PrismaProviderStatementOrderLineRecord,
   ReassignmentEvent as PrismaReassignmentEventRecord,
   Service as PrismaServiceRecord,
   Settlement as PrismaSettlementRecord,
@@ -37,7 +42,7 @@ import {
   type AccountTokenValidationResult,
   type AuthenticatedAccountSession,
   type IdentityAuditEvent,
-} from "../../src/features/auth/model";
+} from "../../src/features/auth/model/index.ts";
 import {
   buildAllDefaultPlatformContentEntries,
   resolvePlatformPageContent,
@@ -46,14 +51,14 @@ import {
   type PlatformContentEntryUpdateCommand,
   type PlatformLanguage,
   type PlatformPageContent,
-} from "../../src/features/content/model/platform-content";
+} from "../../src/features/content/model/platform-content.ts";
 import {
   createOpaqueToken,
   createPasswordDigest,
   hashOpaqueToken,
   verifyPasswordDigest,
-} from "../../src/features/auth/lib/credentials";
-import type { WashoffPlatformRepository } from "../../src/features/orders/application/ports/washoff-platform-repository";
+} from "../../src/features/auth/lib/credentials.ts";
+import type { WashoffPlatformRepository } from "../../src/features/orders/application/ports/washoff-platform-repository.ts";
 import {
   AssignmentStatus,
   HOTEL_REGISTRATION_MAX_DOCUMENT_SIZE_BYTES,
@@ -82,8 +87,20 @@ import {
   OrderStatus,
   type OrderStatusHistoryEntry,
   ProviderCapacityStatus,
+  PROVIDER_REGISTRATION_MAX_DOCUMENT_SIZE_BYTES,
+  PROVIDER_REGISTRATION_SAUDI_CITIES_AR,
   type ProviderProfile,
   type ProviderRegistrationInput,
+  type ProviderRegistrationDocumentUploadInput,
+  type ProviderRegistrationStoredDocumentReference,
+  type ProviderServiceOffering,
+  type ProviderWorkingDay,
+  type PlatformProduct,
+  type PlatformServiceMatrixRow,
+  type PlatformServiceType,
+  PlatformServiceCurrentStatus,
+  ProviderServiceProposalStatus,
+  providerWorkingDayLabelsAr,
   providerExecutableOrderStatuses,
   ReassignmentReason,
   type Assignment,
@@ -92,6 +109,7 @@ import {
   type ScoreBreakdown,
   ServiceBillingUnit,
   ServiceCategory,
+  ServicePricingUnit,
   type ServiceCatalogItem,
   SettlementStatus,
   type Settlement,
@@ -99,29 +117,71 @@ import {
   SLACheckpoint,
   SLAStatus,
   type SLAHistory,
-} from "../../src/features/orders/model";
+  buildDefaultPlatformServiceCatalog,
+  buildServiceCatalogItemDescription,
+  buildServiceCatalogItemName,
+  buildHotelFacingServiceCatalog,
+  buildProviderDocumentDownloadPath,
+  buildProviderCapabilitiesFromApprovedOfferings,
+  buildPlatformCatalogMatrixLabel,
+  buildProviderStatementId,
+  buildProviderStatementNumber,
+  buildHotelInvoiceId,
+  buildHotelInvoiceNumber,
+  buildDailyFinanceDateKey,
+  buildFinancialBreakdown,
+  buildOrderFinancialSnapshot,
+  appendHotelInvoiceLine,
+  appendProviderStatementLine,
+  getDefaultRushSupportForServiceType,
+  getDefaultTurnaroundHoursForServiceType,
+  hotelInvoiceStatusLabelsAr,
+  mapServiceTypeToCategory,
+  providerStatementStatusLabelsAr,
+  PlatformServiceTypeCode,
+  type AdminFinanceSummary,
+  type FinancialDocumentPartySnapshot,
+  type HotelInvoice,
+  HotelInvoiceStatus,
+  type OrderFinancialLineSnapshot,
+  type OrderFinancialSnapshot,
+  type ProviderSettlementStatement,
+  ProviderStatementStatus,
+  roundFinanceAmount,
+} from "../../src/features/orders/model/index.ts";
 import {
   createMatchingRunId,
   evaluateProviderEligibility,
   matchProvidersForOrder,
-} from "../../src/features/orders/services";
+} from "../../src/features/orders/services/index.ts";
 import {
   defaultPlatformSettings,
   type PlatformRuntimeStatus,
   type PlatformSettings,
   type PlatformSettingsAuditEntry,
   type PlatformSettingsUpdateCommand,
-} from "../../src/features/platform-settings/model/platform-settings";
-import { getWashoffPrismaClient } from "./prisma-client";
+} from "../../src/features/platform-settings/model/platform-settings.ts";
+import { getWashoffPrismaClient } from "./prisma-client.ts";
 import {
   createPrismaPlatformPersistenceStore,
   type PrismaPlatformPersistenceStore,
-} from "./prisma-persistence-store";
+} from "./prisma-persistence-store.ts";
 import {
   assertHotelRegistrationDocumentsTotalSize,
-  storeHotelRegistrationDocument,
-} from "./hotel-registration-documents";
-import type { WashoffEnvironment } from "./environment";
+  validateHotelRegistrationDocumentUpload,
+} from "./hotel-registration-documents.ts";
+import { validateProviderRegistrationDocumentUpload } from "./provider-registration-documents.ts";
+import type { WashoffEnvironment } from "./environment.ts";
+import {
+  createDatabaseWashoffObjectStorage,
+  createFilesystemWashoffObjectStorage,
+  type WashoffObjectStorage,
+  type WashoffObjectStorageMode,
+} from "./object-storage.ts";
+import {
+  generateHotelInvoicePdf,
+  generateProviderStatementPdf,
+} from "./financial-documents-pdf.ts";
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -131,6 +191,12 @@ export interface PrismaBackedWashoffPlatformRepositoryOptions {
   requestTimeSweepEnabled?: boolean;
   runtimeStatus?: PlatformRuntimeStatus;
   environment?: WashoffEnvironment;
+  storageMode?: WashoffObjectStorageMode;
+  storageRootPath?: string;
+  signingSecret?: string;
+  storageSignedUrlTtlSeconds?: number;
+  publicAppUrl?: string;
+  pdfFontPath?: string;
 }
 
 const DEFAULT_HOTEL_ID = "hotel-1";
@@ -213,6 +279,20 @@ const toIsoString = (value: Date | string | null | undefined) => {
 
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 };
+
+const DEFAULT_PLATFORM_SERVICE_CATALOG = buildDefaultPlatformServiceCatalog();
+
+const buildProviderOfferingId = (providerId: string, serviceId: string) =>
+  `offering-${providerId}-${serviceId}`;
+
+const isPlatformMatrixServiceRecord = (service: PrismaServiceRecord) =>
+  Boolean(service.productId && service.serviceType && service.pricingUnit);
+
+const isApprovedProviderCapabilityRecord = (capability: PrismaProviderCapabilityRecord) =>
+  capability.active &&
+  capability.currentStatus === PlatformServiceCurrentStatus.Active &&
+  capability.availableMatrix &&
+  capability.activeMatrix;
 
 const addHours = (fromIso: string, hours: number) => {
   return new Date(new Date(fromIso).getTime() + hours * 60 * 60 * 1000).toISOString();
@@ -393,6 +473,10 @@ const mapPlatformSettingsRecordToDomain = (
     siteNameEn: string;
     siteTaglineAr: string;
     siteTaglineEn: string;
+    sellerLegalNameAr: string;
+    sellerVatNumber: string;
+    sellerAddressAr: string;
+    sellerCityAr: string;
     mailFromNameAr: string;
     mailFromEmail: string;
     supportEmail: string | null;
@@ -411,6 +495,10 @@ const mapPlatformSettingsRecordToDomain = (
   siteNameEn: record.siteNameEn,
   siteTaglineAr: record.siteTaglineAr,
   siteTaglineEn: record.siteTaglineEn,
+  sellerLegalNameAr: record.sellerLegalNameAr,
+  sellerVatNumber: record.sellerVatNumber,
+  sellerAddressAr: record.sellerAddressAr,
+  sellerCityAr: record.sellerCityAr,
   mailFromNameAr: record.mailFromNameAr,
   mailFromEmail: record.mailFromEmail,
   supportEmail: record.supportEmail ?? undefined,
@@ -534,6 +622,10 @@ const ensurePlatformAdminSeededTx = async (tx: PrismaTx) => {
         siteNameEn: defaultPlatformSettings.siteNameEn,
         siteTaglineAr: defaultPlatformSettings.siteTaglineAr,
         siteTaglineEn: defaultPlatformSettings.siteTaglineEn,
+        sellerLegalNameAr: defaultPlatformSettings.sellerLegalNameAr,
+        sellerVatNumber: defaultPlatformSettings.sellerVatNumber,
+        sellerAddressAr: defaultPlatformSettings.sellerAddressAr,
+        sellerCityAr: defaultPlatformSettings.sellerCityAr,
         mailFromNameAr: defaultPlatformSettings.mailFromNameAr,
         mailFromEmail: defaultPlatformSettings.mailFromEmail,
         supportEmail: defaultPlatformSettings.supportEmail ?? null,
@@ -579,6 +671,188 @@ const ensurePlatformAdminSeededTx = async (tx: PrismaTx) => {
         updatedAt: new Date(entry.updatedAt),
         updatedByAccountId: entry.updatedByAccountId ?? null,
       })),
+    });
+  }
+};
+
+const ensurePlatformServiceCatalogSeededTx = async (tx: PrismaTx) => {
+  const timestamp = new Date().toISOString();
+
+  for (const product of DEFAULT_PLATFORM_SERVICE_CATALOG.products) {
+    await tx.platformProduct.upsert({
+      where: { id: product.id },
+      update: {
+        code: product.code,
+        nameAr: product.name.ar,
+        nameEn: product.name.en ?? null,
+        active: product.active,
+        sortOrder: product.sortOrder,
+        updatedAt: new Date(timestamp),
+      },
+      create: {
+        id: product.id,
+        code: product.code,
+        nameAr: product.name.ar,
+        nameEn: product.name.en ?? null,
+        active: product.active,
+        sortOrder: product.sortOrder,
+        createdAt: new Date(timestamp),
+        updatedAt: new Date(timestamp),
+      },
+    });
+  }
+
+  const productById = new Map(
+    DEFAULT_PLATFORM_SERVICE_CATALOG.products.map((product) => [product.id, product]),
+  );
+  const serviceTypeById = new Map(
+    DEFAULT_PLATFORM_SERVICE_CATALOG.serviceTypes.map((serviceType) => [serviceType.id, serviceType]),
+  );
+
+  for (const row of DEFAULT_PLATFORM_SERVICE_CATALOG.matrixRows) {
+    const product = productById.get(row.productId);
+    const serviceType = serviceTypeById.get(row.serviceTypeId);
+
+    if (!product || !serviceType) {
+      continue;
+    }
+
+    const localizedName = buildServiceCatalogItemName(product.name.ar, serviceType.code);
+    const localizedDescription = buildServiceCatalogItemDescription(product.name.ar, serviceType.code);
+
+    await tx.service.upsert({
+      where: { id: row.id },
+      update: {
+        code: row.code,
+        nameAr: localizedName.ar,
+        nameEn: localizedName.en ?? null,
+        descriptionAr: localizedDescription?.ar ?? null,
+        descriptionEn: localizedDescription?.en ?? null,
+        category: mapServiceTypeToCategory(serviceType.code),
+        billingUnit: ServiceBillingUnit.Piece,
+        defaultUnitPriceSar: toDecimal(row.suggestedPriceSar ?? 0) ?? new Prisma.Decimal(0),
+        defaultTurnaroundHours: getDefaultTurnaroundHoursForServiceType(serviceType.code),
+        supportsRush: getDefaultRushSupportForServiceType(serviceType.code),
+        active: row.active,
+        productId: product.id,
+        serviceType: serviceType.code,
+        pricingUnit: row.pricingUnit,
+        suggestedPriceSar: toDecimal(row.suggestedPriceSar),
+        isAvailable: row.isAvailable,
+        sortOrder: row.sortOrder,
+        updatedAt: new Date(timestamp),
+      },
+      create: {
+        id: row.id,
+        code: row.code,
+        nameAr: localizedName.ar,
+        nameEn: localizedName.en ?? null,
+        descriptionAr: localizedDescription?.ar ?? null,
+        descriptionEn: localizedDescription?.en ?? null,
+        category: mapServiceTypeToCategory(serviceType.code),
+        billingUnit: ServiceBillingUnit.Piece,
+        defaultUnitPriceSar: toDecimal(row.suggestedPriceSar ?? 0) ?? new Prisma.Decimal(0),
+        defaultTurnaroundHours: getDefaultTurnaroundHoursForServiceType(serviceType.code),
+        supportsRush: getDefaultRushSupportForServiceType(serviceType.code),
+        active: row.active,
+        productId: product.id,
+        serviceType: serviceType.code,
+        pricingUnit: row.pricingUnit,
+        suggestedPriceSar: toDecimal(row.suggestedPriceSar),
+        isAvailable: row.isAvailable,
+        sortOrder: row.sortOrder,
+        createdAt: new Date(timestamp),
+        updatedAt: new Date(timestamp),
+      },
+    });
+  }
+};
+
+const ensureLegacyProviderMatrixOfferingsSeededTx = async (tx: PrismaTx) => {
+  const [providers, matrixServices, latestCapacities, existingCapabilities] = await Promise.all([
+    tx.provider.findMany({
+      where: {
+        onboardingStatus: OnboardingStatus.Approved,
+        active: true,
+      },
+      orderBy: { code: "asc" },
+    }),
+    tx.service.findMany({
+      where: {
+        productId: {
+          not: null,
+        },
+        active: true,
+        isAvailable: true,
+      },
+    }),
+    tx.providerCapacity.findMany({
+      orderBy: [{ providerId: "asc" }, { capacityDate: "desc" }],
+    }),
+    tx.providerCapability.findMany({
+      orderBy: [{ providerId: "asc" }, { serviceId: "asc" }],
+    }),
+  ]);
+
+  const latestCapacityByProviderId = selectLatestCapacityRows(latestCapacities);
+  const matrixServiceIds = new Set(matrixServices.map((service) => service.id));
+  const capabilitiesByProviderId = new Map<string, PrismaProviderCapabilityRecord[]>();
+
+  existingCapabilities.forEach((capability) => {
+    const list = capabilitiesByProviderId.get(capability.providerId) ?? [];
+    list.push(capability);
+    capabilitiesByProviderId.set(capability.providerId, list);
+  });
+
+  for (const provider of providers) {
+    const providerCapabilities = capabilitiesByProviderId.get(provider.id) ?? [];
+    const hasMatrixOffering = providerCapabilities.some((capability) => matrixServiceIds.has(capability.serviceId));
+
+    if (hasMatrixOffering) {
+      continue;
+    }
+
+    const totalCapacityKg = toNumber(latestCapacityByProviderId.get(provider.id)?.totalKg) ?? 0;
+
+    if (totalCapacityKg <= 0) {
+      continue;
+    }
+
+    await tx.providerCapability.createMany({
+      data: matrixServices.map((service) => ({
+        providerId: provider.id,
+        serviceId: service.id,
+        serviceNameAr: service.nameAr,
+        serviceNameEn: service.nameEn ?? null,
+        active: true,
+        unitPriceSar:
+          toDecimal(toNumber(service.suggestedPriceSar) ?? toNumber(service.defaultUnitPriceSar) ?? 0) ??
+          new Prisma.Decimal(0),
+        maxDailyKg: toDecimal(totalCapacityKg) ?? new Prisma.Decimal(0),
+        maxSingleOrderKg: toDecimal(Math.max(Math.round(totalCapacityKg * 0.3), 25)) ?? new Prisma.Decimal(25),
+        rushSupported: service.supportsRush,
+        supportedCityCodesJson: toJsonInput([provider.city]),
+        defaultTurnaroundHours: service.defaultTurnaroundHours,
+        minimumPickupLeadHours: 2,
+        pickupWindowStartHour: 8,
+        pickupWindowEndHour: 22,
+        currentApprovedPriceSar:
+          toDecimal(toNumber(service.suggestedPriceSar) ?? toNumber(service.defaultUnitPriceSar) ?? 0) ??
+          new Prisma.Decimal(0),
+        currentStatus: PlatformServiceCurrentStatus.Active,
+        proposedPriceSar: null,
+        proposedStatus: null,
+        proposedSubmittedAt: null,
+        approvedAt: provider.reviewedAt ?? provider.updatedAt,
+        approvedByAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        approvedByRole: AccountRole.Admin,
+        rejectionReasonAr: null,
+        activeMatrix: service.active,
+        availableMatrix: service.isAvailable,
+        createdAt: provider.createdAt,
+        updatedAt: provider.updatedAt,
+      })),
+      skipDuplicates: true,
     });
   }
 };
@@ -704,7 +978,196 @@ const mapServiceRecordToDomain = (service: PrismaServiceRecord): ServiceCatalogI
   defaultTurnaroundHours: service.defaultTurnaroundHours,
   supportsRush: service.supportsRush,
   active: service.active,
+  productId: service.productId ?? undefined,
+  serviceType: (service.serviceType as PlatformServiceTypeCode | null) ?? undefined,
+  pricingUnit: (service.pricingUnit as ServicePricingUnit | null) ?? undefined,
+  suggestedPriceSar: toNumber(service.suggestedPriceSar) ?? undefined,
+  isAvailable: service.isAvailable,
 });
+
+const mapPlatformServiceMatrixSummary = ({
+  row,
+  product,
+  serviceType,
+  providerOfferings,
+}: {
+  row: PrismaServiceRecord;
+  product: PrismaPlatformProductRecord;
+  serviceType: PlatformServiceType;
+  providerOfferings: PrismaProviderCapabilityRecord[];
+}): PlatformServiceMatrixRow & {
+  productName: { ar: string; en?: string };
+  serviceTypeName: { ar: string; en?: string };
+  matrixLabelAr: string;
+} => {
+  const activeOfferings = providerOfferings.filter(isApprovedProviderCapabilityRecord);
+
+  return {
+    id: row.id,
+    code: row.code,
+    productId: product.id,
+    serviceTypeId: serviceType.id,
+    pricingUnit: (row.pricingUnit as ServicePricingUnit | null) ?? ServicePricingUnit.Piece,
+    suggestedPriceSar: toNumber(row.suggestedPriceSar) ?? undefined,
+    isAvailable: row.isAvailable,
+    active: row.active,
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt?.toISOString?.() ?? undefined,
+    updatedAt: row.updatedAt?.toISOString?.() ?? undefined,
+    productName: {
+      ar: product.nameAr,
+      en: product.nameEn ?? undefined,
+    },
+    serviceTypeName: serviceType.name,
+    matrixLabelAr: buildPlatformCatalogMatrixLabel({
+      productName: { ar: product.nameAr, en: product.nameEn ?? undefined },
+      serviceTypeName: serviceType.name,
+    }),
+    operationalProviderCount: activeOfferings.length,
+    lowestApprovedPriceSar:
+      activeOfferings.length > 0
+        ? activeOfferings.reduce((current, entry) => {
+            const approvedPrice = toNumber(entry.currentApprovedPriceSar);
+            return typeof approvedPrice === "number" ? Math.min(current, approvedPrice) : current;
+          }, Number.POSITIVE_INFINITY)
+        : undefined,
+  };
+};
+
+const loadPlatformCatalogTx = async (tx: PrismaTx) => {
+  const [products, serviceRows] = await Promise.all([
+    tx.platformProduct.findMany({ orderBy: [{ sortOrder: "asc" }, { code: "asc" }] }),
+    tx.service.findMany({
+      where: {
+        productId: {
+          not: null,
+        },
+      },
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+    }),
+  ]);
+  const capabilities =
+    serviceRows.length === 0
+      ? []
+      : await tx.providerCapability.findMany({
+          where: {
+            serviceId: {
+              in: serviceRows.map((row) => row.id),
+            },
+          },
+          orderBy: [{ providerId: "asc" }, { serviceId: "asc" }],
+        });
+  const serviceTypes = DEFAULT_PLATFORM_SERVICE_CATALOG.serviceTypes;
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const serviceTypeById = new Map(serviceTypes.map((serviceType) => [serviceType.id, serviceType]));
+  const capabilitiesByServiceId = new Map<string, PrismaProviderCapabilityRecord[]>();
+
+  capabilities.forEach((capability) => {
+    const list = capabilitiesByServiceId.get(capability.serviceId) ?? [];
+    list.push(capability);
+    capabilitiesByServiceId.set(capability.serviceId, list);
+  });
+
+  const matrixRows = serviceRows
+    .map((row) => {
+      if (!row.productId || !row.serviceType) {
+        return undefined;
+      }
+
+      const product = productById.get(row.productId);
+      const serviceType = serviceTypeById.get(row.serviceType);
+
+      if (!product || !serviceType) {
+        return undefined;
+      }
+
+      return mapPlatformServiceMatrixSummary({
+        row,
+        product,
+        serviceType,
+        providerOfferings: capabilitiesByServiceId.get(row.id) ?? [],
+      });
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+  return {
+    serviceTypes,
+    products: products.map<PlatformProduct>((product) => ({
+      id: product.id,
+      code: product.code,
+      name: {
+        ar: product.nameAr,
+        en: product.nameEn ?? undefined,
+      },
+      active: product.active,
+      sortOrder: product.sortOrder,
+      createdAt: product.createdAt.toISOString(),
+      updatedAt: product.updatedAt.toISOString(),
+    })),
+    matrixRows,
+  };
+};
+
+const mapProviderCapabilityRecordToOffering = ({
+  capability,
+  serviceById,
+  productById,
+  serviceTypeById,
+}: {
+  capability: PrismaProviderCapabilityRecord;
+  serviceById: Map<string, PrismaServiceRecord>;
+  productById: Map<string, PrismaPlatformProductRecord>;
+  serviceTypeById: Map<string, PlatformServiceType>;
+}): ProviderServiceOffering | undefined => {
+  const service = serviceById.get(capability.serviceId);
+
+  if (!service || !service.productId || !service.serviceType || !service.pricingUnit) {
+    return undefined;
+  }
+
+  const product = productById.get(service.productId);
+  const serviceType = serviceTypeById.get(service.serviceType);
+
+  if (!product || !serviceType) {
+    return undefined;
+  }
+
+  return {
+    id: buildProviderOfferingId(capability.providerId, capability.serviceId),
+    providerId: capability.providerId,
+    serviceId: capability.serviceId,
+    productId: product.id,
+    productName: {
+      ar: product.nameAr,
+      en: product.nameEn ?? undefined,
+    },
+    serviceType: service.serviceType as PlatformServiceTypeCode,
+    serviceTypeName: serviceType.name,
+    pricingUnit: service.pricingUnit as ServicePricingUnit,
+    currentApprovedPriceSar: toNumber(capability.currentApprovedPriceSar) ?? undefined,
+    currentStatus: capability.currentStatus as PlatformServiceCurrentStatus,
+    currentStatusLabelAr:
+      capability.currentStatus === PlatformServiceCurrentStatus.Active ? "نشط" : "غير نشط",
+    proposedPriceSar: toNumber(capability.proposedPriceSar) ?? undefined,
+    proposedStatus: (capability.proposedStatus as ProviderServiceProposalStatus | null) ?? undefined,
+    proposedStatusLabelAr:
+      capability.proposedStatus === ProviderServiceProposalStatus.PendingApproval
+        ? "بانتظار الاعتماد"
+        : capability.proposedStatus === ProviderServiceProposalStatus.Rejected
+          ? "مرفوض"
+          : undefined,
+    proposedSubmittedAt: toIsoString(capability.proposedSubmittedAt),
+    approvedAt: toIsoString(capability.approvedAt),
+    approvedByAccountId: capability.approvedByAccountId ?? undefined,
+    approvedByRole: capability.approvedByRole ?? undefined,
+    rejectionReasonAr: capability.rejectionReasonAr ?? undefined,
+    suggestedPriceSar: toNumber(service.suggestedPriceSar) ?? undefined,
+    activeMatrix: capability.activeMatrix,
+    availableMatrix: capability.availableMatrix,
+    createdAt: toIsoString(capability.createdAt) ?? new Date().toISOString(),
+    updatedAt: toIsoString(capability.updatedAt) ?? new Date().toISOString(),
+  };
+};
 
 const selectLatestCapacityRows = (rows: PrismaProviderCapacityRecord[]) => {
   const capacityByProviderId = new Map<string, PrismaProviderCapacityRecord>();
@@ -725,15 +1188,24 @@ const mapProviderRecordsToDomain = ({
   capabilities,
   capacities,
   performance,
+  serviceRows,
+  products,
 }: {
   providers: PrismaProviderRecord[];
   capabilities: PrismaProviderCapabilityRecord[];
   capacities: PrismaProviderCapacityRecord[];
   performance: PrismaProviderPerformanceStatsRecord[];
+  serviceRows: PrismaServiceRecord[];
+  products: PrismaPlatformProductRecord[];
 }): ProviderProfile[] => {
   const capabilitiesByProviderId = new Map<string, PrismaProviderCapabilityRecord[]>();
   const performanceByProviderId = new Map<string, PrismaProviderPerformanceStatsRecord>();
   const capacityByProviderId = selectLatestCapacityRows(capacities);
+  const serviceById = new Map(serviceRows.map((service) => [service.id, service]));
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const serviceTypeById = new Map(
+    DEFAULT_PLATFORM_SERVICE_CATALOG.serviceTypes.map((serviceType) => [serviceType.id, serviceType]),
+  );
 
   capabilities.forEach((capability) => {
     const list = capabilitiesByProviderId.get(capability.providerId) ?? [];
@@ -748,6 +1220,26 @@ const mapProviderRecordsToDomain = ({
   return providers.map((provider) => {
     const providerCapacity = capacityByProviderId.get(provider.id);
     const providerPerformance = performanceByProviderId.get(provider.id);
+    const providerCapabilities = capabilitiesByProviderId.get(provider.id) ?? [];
+    const commercialRegistrationFile =
+      fromJsonOptional<ProviderRegistrationStoredDocumentReference>(
+        provider.commercialRegistrationFileJson,
+      ) ?? {
+        kind: "commercial_registration",
+        fileName: "commercial-registration.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 0,
+        uploadedAt: provider.createdAt.toISOString(),
+        storageKey: `legacy://${provider.id}/commercial-registration.pdf`,
+        downloadPath: buildProviderDocumentDownloadPath(provider.id),
+      };
+    const workingDays = fromJson<ProviderWorkingDay[]>(provider.workingDaysJson, [
+      "sunday",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+    ]);
 
     return {
       id: provider.id,
@@ -776,7 +1268,52 @@ const mapProviderRecordsToDomain = ({
         email: provider.contactEmail ?? undefined,
       },
       serviceAreaCities: fromJson<string[]>(provider.serviceAreaCitiesJson, []),
-      capabilities: (capabilitiesByProviderId.get(provider.id) ?? []).map((capability) => ({
+      businessProfile: {
+        legalEntityName: provider.legalEntityName ?? undefined,
+        commercialRegistrationNumber: provider.commercialRegistrationNumber ?? provider.code,
+        taxRegistrationNumber: provider.taxRegistrationNumber ?? provider.code,
+        phone: provider.businessPhone ?? provider.contactPhone ?? "",
+        email: provider.businessEmail ?? provider.contactEmail ?? "",
+        commercialRegistrationFile: {
+          ...commercialRegistrationFile,
+          downloadPath:
+            commercialRegistrationFile.downloadPath ?? buildProviderDocumentDownloadPath(provider.id),
+        },
+      },
+      locationProfile: {
+        addressText: provider.addressText ?? provider.line1 ?? "",
+      },
+      operatingProfile: {
+        otherServicesText: provider.otherServicesText ?? undefined,
+        pickupLeadTimeHours: provider.pickupLeadTimeHours ?? 2,
+        executionTimeHours: provider.executionTimeHours ?? 24,
+        deliveryTimeHours: provider.deliveryTimeHours ?? 4,
+        workingDays,
+        workingHoursFrom: provider.workingHoursFrom ?? "08:00",
+        workingHoursTo: provider.workingHoursTo ?? "22:00",
+      },
+      financialProfile: {
+        bankName: provider.bankName ?? "غير محدد",
+        iban: provider.iban ?? "",
+        accountHolderName:
+          provider.bankAccountHolderName ?? provider.legalEntityName ?? provider.legalNameAr,
+      },
+      accountSetupProfile: {
+        fullName: provider.accountSetupName ?? provider.contactName ?? "",
+        phone: provider.accountSetupPhone ?? provider.contactPhone ?? "",
+        email: provider.accountSetupEmail ?? provider.contactEmail ?? "",
+      },
+      serviceOfferings: providerCapabilities
+        .map((capability) =>
+          mapProviderCapabilityRecordToOffering({
+            capability,
+            serviceById,
+            productById,
+            serviceTypeById,
+          }),
+        )
+        .filter((offering): offering is ProviderServiceOffering => Boolean(offering)),
+      capabilities: providerCapabilities.map((capability) => ({
         serviceId: capability.serviceId,
         serviceName: {
           ar: capability.serviceNameAr,
@@ -1090,11 +1627,18 @@ const mapOrdersToDomain = ({
         estimatedLineTotalSar: toNumber(item.estimatedLineTotalSar) ?? 0,
         notesAr: item.notesAr ?? undefined,
       })),
+      roomNumber: order.roomNumber ?? undefined,
       totalItemCount: toNumber(order.totalItemCount) ?? 0,
       currency: order.currency as LaundryOrder["currency"],
       estimatedSubtotalSar: toNumber(order.estimatedSubtotalSar) ?? 0,
       pickupAt: order.pickupAt.toISOString(),
       notesAr: order.notesAr ?? undefined,
+      hotelFinancialSnapshot: fromJsonOptional<OrderFinancialSnapshot>(order.hotelFinancialSnapshotJson),
+      providerFinancialSnapshot: fromJsonOptional<OrderFinancialSnapshot>(order.providerFinancialSnapshotJson),
+      hotelInvoiceId: order.hotelInvoiceId ?? undefined,
+      providerStatementId: order.providerStatementId ?? undefined,
+      billedAt: toIsoString(order.billedAt),
+      settledAt: toIsoString(order.settledAt),
       statusUpdatedAt: order.statusUpdatedAt.toISOString(),
       progressPercent: toNumber(order.progressPercent),
       activeAssignmentId: order.activeAssignmentId ?? undefined,
@@ -1213,6 +1757,54 @@ const normalizeOptionalDateField = (value: string | undefined, label: string) =>
   return parsedDate.toISOString();
 };
 
+const requireSaudiCityField = (value: string) => {
+  const normalized = requireTextField(value, "المدينة");
+
+  if (!PROVIDER_REGISTRATION_SAUDI_CITIES_AR.includes(normalized as never)) {
+    throw new Error("يرجى اختيار المدينة من القائمة المتاحة.");
+  }
+
+  return normalized as (typeof PROVIDER_REGISTRATION_SAUDI_CITIES_AR)[number];
+};
+
+const requireTimeField = (value: string, label: string) => {
+  const normalized = requireTextField(value, label);
+
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(normalized)) {
+    throw new Error(`يرجى إدخال ${label} بصيغة وقت صحيحة مثل 08:00.`);
+  }
+
+  return normalized;
+};
+
+const requireIbanField = (value: string) => {
+  const normalized = requireTextField(value, "رقم الآيبان")
+    .replace(/\s+/g, "")
+    .toUpperCase();
+
+  if (!/^SA\d{22}$/.test(normalized)) {
+    throw new Error("يرجى إدخال رقم آيبان سعودي صالح يبدأ بـ SA.");
+  }
+
+  return normalized;
+};
+
+const normalizeWorkingDays = (value: ProviderWorkingDay[] | string[]) => {
+  const normalized = Array.from(
+    new Set(
+      value
+        .map((item) => item.toString().trim())
+        .filter((item): item is ProviderWorkingDay => item in providerWorkingDayLabelsAr),
+    ),
+  );
+
+  if (normalized.length === 0) {
+    throw new Error("يرجى اختيار يوم عمل واحد على الأقل.");
+  }
+
+  return normalized;
+};
+
 const validateHotelRegistrationInput = (input: HotelRegistrationInput) => {
   if (!(input.hotelClassification in hotelClassificationLabelsAr)) {
     throw new Error("يرجى اختيار تصنيف الفندق.");
@@ -1300,18 +1892,40 @@ const validateProviderRegistrationInput = (
   input: ProviderRegistrationInput,
   services: ServiceCatalogItem[],
 ) => {
-  const supportedServiceIds = Array.from(
-    new Set(input.supportedServiceIds.map((serviceId) => serviceId.trim()).filter(Boolean)),
+  const servicePricing = Array.from(
+    new Map(
+      input.servicePricing
+        .filter(
+          (entry) =>
+            typeof entry.serviceId === "string" &&
+            entry.serviceId.trim().length > 0 &&
+            Number.isFinite(entry.proposedPriceSar) &&
+            entry.proposedPriceSar > 0,
+        )
+        .map((entry) => [entry.serviceId.trim(), entry]),
+    ).values(),
   );
-  const dailyCapacityKg = Number(input.dailyCapacityKg);
+  const dailyCapacityKg = requirePositiveNumberField(input.dailyCapacityKg, "السعة اليومية");
   const serviceMap = new Map(services.map((service) => [service.id, service]));
+  const commercialRegistrationFile = input.commercialRegistrationFile;
 
-  if (supportedServiceIds.length === 0) {
+  if (servicePricing.length === 0) {
     throw new Error("اختر خدمة واحدة على الأقل للمزوّد.");
   }
 
-  if (!Number.isFinite(dailyCapacityKg) || dailyCapacityKg <= 0) {
-    throw new Error("يرجى إدخال سعة تشغيلية يومية صحيحة.");
+  if (!commercialRegistrationFile) {
+    throw new Error("يجب إرفاق ملف السجل التجاري.");
+  }
+
+  if (
+    !Number.isFinite(commercialRegistrationFile.sizeBytes) ||
+    commercialRegistrationFile.sizeBytes <= 0
+  ) {
+    throw new Error("يرجى إرفاق ملف صالح للسجل التجاري.");
+  }
+
+  if (commercialRegistrationFile.sizeBytes > PROVIDER_REGISTRATION_MAX_DOCUMENT_SIZE_BYTES) {
+    throw new Error("الحد الأقصى لحجم ملف السجل التجاري هو 5 ميجابايت.");
   }
 
   supportedServiceIds.forEach((serviceId) => {
@@ -1328,13 +1942,42 @@ const validateProviderRegistrationInput = (
 
   return {
     providerName: requireTextField(input.providerName, "اسم المزوّد"),
-    city: requireTextField(input.city, "المدينة"),
-    contactPersonName: requireTextField(input.contactPersonName, "اسم مسؤول التواصل"),
-    contactEmail: requireEmailField(input.contactEmail),
-    contactPhone: requirePhoneField(input.contactPhone),
+    legalEntityName: normalizeOptionalTextField(input.legalEntityName),
+    commercialRegistrationNumber: requireTextField(input.commercialRegistrationNumber, "رقم السجل التجاري"),
+    taxRegistrationNumber: requireTextField(input.taxRegistrationNumber, "الرقم الضريبي"),
+    city: requireSaudiCityField(input.city),
+    businessPhone: requirePhoneField(input.businessPhone),
+    businessEmail: requireEmailField(input.businessEmail),
+    addressText: requireTextField(input.addressText, "العنوان"),
+    latitude: requireCoordinateField({
+      value: input.latitude,
+      label: "خط العرض",
+      min: -90,
+      max: 90,
+    }),
+    longitude: requireCoordinateField({
+      value: input.longitude,
+      label: "خط الطول",
+      min: -180,
+      max: 180,
+    }),
     supportedServiceIds,
+    otherServicesText: normalizeOptionalTextField(input.otherServicesText),
     dailyCapacityKg,
-    notesAr: input.notesAr?.trim() || undefined,
+    pickupLeadTimeHours: requirePositiveNumberField(input.pickupLeadTimeHours, "زمن الاستلام"),
+    executionTimeHours: requirePositiveNumberField(input.executionTimeHours, "زمن التنفيذ"),
+    deliveryTimeHours: requirePositiveNumberField(input.deliveryTimeHours, "زمن التسليم"),
+    workingDays: normalizeWorkingDays(input.workingDays),
+    workingHoursFrom: requireTimeField(input.workingHoursFrom, "من وقت العمل"),
+    workingHoursTo: requireTimeField(input.workingHoursTo, "إلى وقت العمل"),
+    commercialRegistrationFile: commercialRegistrationFile as ProviderRegistrationDocumentUploadInput,
+    bankName: requireTextField(input.bankName, "اسم البنك"),
+    iban: requireIbanField(input.iban),
+    bankAccountHolderName: requireTextField(input.bankAccountHolderName, "اسم صاحب الحساب"),
+    accountFullName: requireTextField(input.accountFullName, "اسم مسؤول الحساب"),
+    accountPhone: requirePhoneField(input.accountPhone),
+    accountEmail: requireEmailField(input.accountEmail),
+    notesAr: normalizeOptionalTextField(input.notesAr ?? input.notes),
   };
 };
 
@@ -1376,6 +2019,193 @@ const buildProviderCapabilitiesForRegistration = (
         startHour: 8,
         endHour: 22,
       },
+    };
+  });
+};
+
+const normalizeProviderServicePricingEntries = (
+  pricingInput: ProviderServicePricingInput[],
+  matrixRows: Array<PlatformServiceMatrixRow & { matrixLabelAr?: string }>,
+) => {
+  const matrixById = new Map(matrixRows.map((row) => [row.id, row]));
+  const normalized = Array.from(
+    new Map(
+      pricingInput
+        .map((entry) => ({
+          serviceId: entry.serviceId.trim(),
+          proposedPriceSar: entry.proposedPriceSar,
+        }))
+        .filter((entry) => entry.serviceId.length > 0)
+        .map((entry) => [entry.serviceId, entry]),
+    ).values(),
+  ).map((entry) => {
+    const row = matrixById.get(entry.serviceId);
+    const label = row?.matrixLabelAr ?? entry.serviceId;
+
+    return {
+      serviceId: entry.serviceId,
+      proposedPriceSar: requirePositiveNumberField(entry.proposedPriceSar, `Ø³Ø¹Ø± ${label}`),
+    };
+  });
+
+  if (normalized.length === 0) {
+    throw new Error("Ø§Ø®ØªØ± Ø®Ø¯Ù…Ø© Ù‚ÙŠØ§Ø³ÙŠØ© ÙˆØ§Ø­Ø¯Ø© Ø¹Ù„Ù‰ Ø§Ù„Ø£Ù‚Ù„ Ù…Ø¹ Ø¥Ø¯Ø®Ø§Ù„ Ø³Ø¹Ø±Ù‡Ø§.");
+  }
+
+  normalized.forEach((entry) => {
+    const row = matrixById.get(entry.serviceId);
+
+    if (!row) {
+      throw new Error(`Ø§Ù„Ø®Ø¯Ù…Ø© Ø§Ù„Ù‚ÙŠØ§Ø³ÙŠØ© ${entry.serviceId} ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©.`);
+    }
+
+    if (!row.active || !row.isAvailable) {
+      throw new Error(`Ø§Ù„Ø®Ø¯Ù…Ø© ${row.matrixLabelAr ?? entry.serviceId} ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹.`);
+    }
+  });
+
+  return normalized;
+};
+
+const validateProviderServiceCatalogRegistrationInput = (
+  input: ProviderRegistrationInput,
+  catalog: {
+    matrixRows: Array<PlatformServiceMatrixRow & { matrixLabelAr?: string }>;
+  },
+) => {
+  const commercialRegistrationFile = input.commercialRegistrationFile;
+
+  if (!commercialRegistrationFile) {
+    throw new Error("ÙŠØ¬Ø¨ Ø¥Ø±ÙØ§Ù‚ Ù…Ù„Ù Ø§Ù„Ø³Ø¬Ù„ Ø§Ù„ØªØ¬Ø§Ø±ÙŠ.");
+  }
+
+  if (
+    !Number.isFinite(commercialRegistrationFile.sizeBytes) ||
+    commercialRegistrationFile.sizeBytes <= 0
+  ) {
+    throw new Error("ÙŠØ±Ø¬Ù‰ Ø¥Ø±ÙØ§Ù‚ Ù…Ù„Ù ØµØ§Ù„Ø­ Ù„Ù„Ø³Ø¬Ù„ Ø§Ù„ØªØ¬Ø§Ø±ÙŠ.");
+  }
+
+  if (commercialRegistrationFile.sizeBytes > PROVIDER_REGISTRATION_MAX_DOCUMENT_SIZE_BYTES) {
+    throw new Error("Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ù‚ØµÙ‰ Ù„Ø­Ø¬Ù… Ù…Ù„Ù Ø§Ù„Ø³Ø¬Ù„ Ø§Ù„ØªØ¬Ø§Ø±ÙŠ Ù‡Ùˆ 5 Ù…ÙŠØ¬Ø§Ø¨Ø§ÙŠØª.");
+  }
+
+  return {
+    providerName: requireTextField(input.providerName, "Ø§Ø³Ù… Ø§Ù„Ù…Ø²ÙˆÙ‘Ø¯"),
+    legalEntityName: normalizeOptionalTextField(input.legalEntityName),
+    commercialRegistrationNumber: requireTextField(
+      input.commercialRegistrationNumber,
+      "Ø±Ù‚Ù… Ø§Ù„Ø³Ø¬Ù„ Ø§Ù„ØªØ¬Ø§Ø±ÙŠ",
+    ),
+    taxRegistrationNumber: requireTextField(input.taxRegistrationNumber, "Ø§Ù„Ø±Ù‚Ù… Ø§Ù„Ø¶Ø±ÙŠØ¨ÙŠ"),
+    city: requireSaudiCityField(input.city),
+    businessPhone: requirePhoneField(input.businessPhone),
+    businessEmail: requireEmailField(input.businessEmail),
+    addressText: requireTextField(input.addressText, "Ø§Ù„Ø¹Ù†ÙˆØ§Ù†"),
+    latitude: requireCoordinateField({
+      value: input.latitude,
+      label: "Ø®Ø· Ø§Ù„Ø¹Ø±Ø¶",
+      min: -90,
+      max: 90,
+    }),
+    longitude: requireCoordinateField({
+      value: input.longitude,
+      label: "Ø®Ø· Ø§Ù„Ø·ÙˆÙ„",
+      min: -180,
+      max: 180,
+    }),
+    servicePricing: normalizeProviderServicePricingEntries(input.servicePricing, catalog.matrixRows),
+    dailyCapacityKg: requirePositiveNumberField(input.dailyCapacityKg, "Ø§Ù„Ø³Ø¹Ø© Ø§Ù„ÙŠÙˆÙ…ÙŠØ©"),
+    pickupLeadTimeHours: requirePositiveNumberField(input.pickupLeadTimeHours, "Ø²Ù…Ù† Ø§Ù„Ø§Ø³ØªÙ„Ø§Ù…"),
+    executionTimeHours: requirePositiveNumberField(input.executionTimeHours, "Ø²Ù…Ù† Ø§Ù„ØªÙ†ÙÙŠØ°"),
+    deliveryTimeHours: requirePositiveNumberField(input.deliveryTimeHours, "Ø²Ù…Ù† Ø§Ù„ØªØ³Ù„ÙŠÙ…"),
+    workingDays: normalizeWorkingDays(input.workingDays),
+    workingHoursFrom: requireTimeField(input.workingHoursFrom, "Ù…Ù† ÙˆÙ‚Øª Ø§Ù„Ø¹Ù…Ù„"),
+    workingHoursTo: requireTimeField(input.workingHoursTo, "Ø¥Ù„Ù‰ ÙˆÙ‚Øª Ø§Ù„Ø¹Ù…Ù„"),
+    commercialRegistrationFile: commercialRegistrationFile as ProviderRegistrationDocumentUploadInput,
+    bankName: requireTextField(input.bankName, "Ø§Ø³Ù… Ø§Ù„Ø¨Ù†Ùƒ"),
+    iban: requireIbanField(input.iban),
+    bankAccountHolderName: requireTextField(input.bankAccountHolderName, "Ø§Ø³Ù… ØµØ§Ø­Ø¨ Ø§Ù„Ø­Ø³Ø§Ø¨"),
+    accountFullName: requireTextField(input.accountFullName, "Ø§Ø³Ù… Ù…Ø³Ø¤ÙˆÙ„ Ø§Ù„Ø­Ø³Ø§Ø¨"),
+    accountPhone: requirePhoneField(input.accountPhone),
+    accountEmail: requireEmailField(input.accountEmail),
+    notesAr: normalizeOptionalTextField(input.notesAr ?? input.notes),
+  };
+};
+
+const parseWorkingHourForProviderCapability = (value: string, fallback: number) => {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+
+  if (!match) {
+    return fallback;
+  }
+
+  const hours = Number(match[1]);
+  return Number.isFinite(hours) ? Math.max(0, Math.min(23, hours)) : fallback;
+};
+
+const buildProviderCapabilityRowsForRegistration = ({
+  providerId,
+  pricingInput,
+  city,
+  dailyCapacityKg,
+  pickupLeadTimeHours,
+  workingHoursFrom,
+  workingHoursTo,
+  matrixRows,
+  timestamp,
+}: {
+  providerId: string;
+  pricingInput: ProviderServicePricingInput[];
+  city: string;
+  dailyCapacityKg: number;
+  pickupLeadTimeHours: number;
+  workingHoursFrom: string;
+  workingHoursTo: string;
+  matrixRows: Array<PlatformServiceMatrixRow & { matrixLabelAr?: string }>;
+  timestamp: string;
+}) => {
+  const matrixById = new Map(matrixRows.map((row) => [row.id, row]));
+  const pickupWindowStartHour = parseWorkingHourForProviderCapability(workingHoursFrom, 8);
+  const pickupWindowEndHour = parseWorkingHourForProviderCapability(workingHoursTo, 22);
+
+  return pricingInput.map((entry) => {
+    const service = matrixById.get(entry.serviceId);
+
+    if (!service) {
+      throw new Error(`Ø§Ù„Ø®Ø¯Ù…Ø© ${entry.serviceId} ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø©.`);
+    }
+
+    const serviceType = service.serviceTypeId as PlatformServiceTypeCode;
+
+    return {
+      providerId,
+      serviceId: service.id,
+      serviceNameAr: service.matrixLabelAr ?? service.id,
+      serviceNameEn: null,
+      active: false,
+      unitPriceSar: entry.proposedPriceSar,
+      maxDailyKg: dailyCapacityKg,
+      maxSingleOrderKg: Math.max(Math.round(dailyCapacityKg * 0.3), 25),
+      rushSupported: getDefaultRushSupportForServiceType(serviceType),
+      supportedCityCodesJson: toJsonInput([city]),
+      defaultTurnaroundHours: getDefaultTurnaroundHoursForServiceType(serviceType),
+      minimumPickupLeadHours: pickupLeadTimeHours,
+      pickupWindowStartHour,
+      pickupWindowEndHour,
+      currentApprovedPriceSar: null,
+      currentStatus: PlatformServiceCurrentStatus.Inactive,
+      proposedPriceSar: entry.proposedPriceSar,
+      proposedStatus: ProviderServiceProposalStatus.PendingApproval,
+      proposedSubmittedAt: new Date(timestamp),
+      approvedAt: null,
+      approvedByAccountId: null,
+      approvedByRole: null,
+      rejectionReasonAr: null,
+      activeMatrix: service.active,
+      availableMatrix: service.isAvailable,
+      createdAt: new Date(timestamp),
+      updatedAt: new Date(timestamp),
     };
   });
 };
@@ -1466,6 +2296,95 @@ const buildOrderItems = ({
       unit: service.billingUnit,
       unitPriceSar: service.defaultUnitPriceSar,
       estimatedLineTotalSar: totalItemCount * service.defaultUnitPriceSar,
+    };
+  });
+};
+
+const validateHotelConsoleOrderInput = (
+  input: CreateHotelOrderInput,
+  services: ServiceCatalogItem[],
+) => {
+  const roomNumber = input.roomNumber?.trim();
+
+  if (!roomNumber) {
+    throw new Error("يرجى إدخال رقم الغرفة قبل إرسال الطلب.");
+  }
+
+  const pickupAt = normalizePickupAt(input.pickupAt);
+
+  if (new Date(pickupAt).getTime() <= Date.now()) {
+    throw new Error("يجب أن يكون موعد الاستلام في المستقبل.");
+  }
+
+  const serviceMap = new Map(services.map((service) => [service.id, service]));
+  const deduplicatedItems = new Map<string, number>();
+
+  (input.items ?? []).forEach((item) => {
+    const serviceId = item.serviceId.trim();
+    const quantity = Number(item.quantity);
+
+    if (serviceId.length === 0 || !Number.isFinite(quantity) || quantity <= 0) {
+      return;
+    }
+
+    deduplicatedItems.set(serviceId, (deduplicatedItems.get(serviceId) ?? 0) + quantity);
+  });
+
+  if (deduplicatedItems.size === 0) {
+    throw new Error("أدخل كمية لخدمة واحدة على الأقل قبل إرسال الطلب.");
+  }
+
+  const items = Array.from(deduplicatedItems.entries()).map(([serviceId, quantity]) => {
+    const service = serviceMap.get(serviceId);
+
+    if (!service) {
+      throw new Error("يرجى اختيار خدمات معتمدة من كتالوج WashOff التشغيلي فقط.");
+    }
+
+    if (!service.active || service.isAvailable === false || (service.operationalProviderCount ?? 0) <= 0) {
+      throw new Error(`الخدمة ${service.name.ar} غير متاحة حاليًا.`);
+    }
+
+    return {
+      serviceId,
+      quantity,
+    };
+  });
+
+  return {
+    roomNumber,
+    items,
+    itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
+    pickupAt,
+    notesAr: (input.notesAr ?? input.notes?.trim()) || undefined,
+    priority: input.priority ?? OrderPriority.Standard,
+  };
+};
+
+const buildItemizedOrderItems = ({
+  orderId,
+  items,
+  serviceMap,
+}: {
+  orderId: string;
+  items: Array<{ serviceId: string; quantity: number }>;
+  serviceMap: Map<string, ServiceCatalogItem>;
+}): OrderItem[] => {
+  return items.map((requestedItem, index) => {
+    const service = serviceMap.get(requestedItem.serviceId);
+
+    if (!service) {
+      throw new Error(`الخدمة ${requestedItem.serviceId} غير موجودة.`);
+    }
+
+    return {
+      id: `${orderId}-item-${index + 1}-${service.id}`,
+      serviceId: service.id,
+      serviceName: service.name,
+      quantity: requestedItem.quantity,
+      unit: service.billingUnit,
+      unitPriceSar: service.defaultUnitPriceSar,
+      estimatedLineTotalSar: requestedItem.quantity * service.defaultUnitPriceSar,
     };
   });
 };
@@ -1913,17 +2832,132 @@ const loadHotelsTx = async (tx: PrismaTx) => {
   return hotels.map(mapHotelRecordToDomain);
 };
 
-const loadServicesTx = async (tx: PrismaTx) => {
-  const services = await tx.service.findMany({
-    orderBy: { code: "asc" },
+const ensureHotelContractPricesForHotelTx = async (
+  tx: PrismaTx,
+  hotelId: string,
+  referenceTime = new Date().toISOString(),
+) => {
+  const [serviceRows, existingContractPrices] = await Promise.all([
+    tx.service.findMany({
+      where: {
+        active: true,
+        isAvailable: true,
+        productId: { not: null },
+        serviceType: { not: null },
+        pricingUnit: { not: null },
+      },
+      orderBy: { code: "asc" },
+    }),
+    tx.hotelContractPrice.findMany({
+      where: { hotelId },
+      orderBy: { serviceId: "asc" },
+    }),
+  ]);
+
+  const existingServiceIds = new Set(existingContractPrices.map((entry) => entry.serviceId));
+  const missingContractPrices = serviceRows
+    .filter((service) => !existingServiceIds.has(service.id) && service.suggestedPriceSar !== null)
+    .map((service) => ({
+      hotelId,
+      serviceId: service.id,
+      unitPriceSar: service.suggestedPriceSar ?? new Prisma.Decimal(0),
+      active: true,
+      createdAt: new Date(referenceTime),
+      updatedAt: new Date(referenceTime),
+    }));
+
+  if (missingContractPrices.length > 0) {
+    await tx.hotelContractPrice.createMany({
+      data: missingContractPrices,
+      skipDuplicates: true,
+    });
+  }
+};
+
+const loadHotelContractPriceMapTx = async (tx: PrismaTx, hotelId: string) => {
+  await ensureHotelContractPricesForHotelTx(tx, hotelId);
+
+  const contractPrices = await tx.hotelContractPrice.findMany({
+    where: {
+      hotelId,
+      active: true,
+    },
+    orderBy: { serviceId: "asc" },
   });
 
-  return services.map(mapServiceRecordToDomain);
+  return new Map(
+    contractPrices
+      .map((entry) => [entry.serviceId, toNumber(entry.unitPriceSar)])
+      .filter((entry): entry is [string, number] => typeof entry[1] === "number"),
+  );
+};
+
+const loadServicesTx = async (tx: PrismaTx, hotelId?: string) => {
+  const catalog = await loadPlatformCatalogTx(tx);
+  const serviceIds = catalog.matrixRows.map((row) => row.id);
+
+  if (serviceIds.length === 0) {
+    return [];
+  }
+
+  const [capabilities, serviceRows, products] = await Promise.all([
+    tx.providerCapability.findMany({
+      where: {
+        serviceId: {
+          in: serviceIds,
+        },
+        active: true,
+        currentStatus: PlatformServiceCurrentStatus.Active,
+        currentApprovedPriceSar: {
+          not: null,
+        },
+        activeMatrix: true,
+        availableMatrix: true,
+      },
+      orderBy: [{ providerId: "asc" }, { serviceId: "asc" }],
+    }),
+    tx.service.findMany({
+      where: {
+        id: {
+          in: serviceIds,
+        },
+      },
+    }),
+    tx.platformProduct.findMany({
+      where: {
+        id: {
+          in: catalog.products.map((product) => product.id),
+        },
+      },
+    }),
+  ]);
+  const serviceById = new Map(serviceRows.map((service) => [service.id, service]));
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const serviceTypeById = new Map(catalog.serviceTypes.map((serviceType) => [serviceType.id, serviceType]));
+  const offerings = capabilities
+    .map((capability) =>
+      mapProviderCapabilityRecordToOffering({
+        capability,
+        serviceById,
+        productById,
+        serviceTypeById,
+      }),
+    )
+    .filter((offering): offering is ProviderServiceOffering => Boolean(offering));
+  const hotelContractPricesByServiceId = hotelId
+    ? await loadHotelContractPriceMapTx(tx, hotelId)
+    : undefined;
+
+  return buildHotelFacingServiceCatalog({
+    ...catalog,
+    offerings,
+    hotelContractPricesByServiceId,
+  });
 };
 
 const loadProvidersTx = async (tx: PrismaTx, providerIds?: string[]) => {
   const where = providerIds ? { id: { in: providerIds } } : undefined;
-  const [providers, capabilities, capacities, performance] = await Promise.all([
+  const [providers, capabilities, capacities, performance, serviceRows, products] = await Promise.all([
     tx.provider.findMany({
       where,
       orderBy: { code: "asc" },
@@ -1940,6 +2974,12 @@ const loadProvidersTx = async (tx: PrismaTx, providerIds?: string[]) => {
       where: providerIds ? { providerId: { in: providerIds } } : undefined,
       orderBy: { providerId: "asc" },
     }),
+    tx.service.findMany({
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+    }),
+    tx.platformProduct.findMany({
+      orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+    }),
   ]);
 
   return mapProviderRecordsToDomain({
@@ -1947,7 +2987,61 @@ const loadProvidersTx = async (tx: PrismaTx, providerIds?: string[]) => {
     capabilities,
     capacities,
     performance,
+    serviceRows,
+    products,
   });
+};
+
+const loadProviderServiceManagementTx = async (tx: PrismaTx, providerId: string) => {
+  const [catalog, provider] = await Promise.all([
+    loadPlatformCatalogTx(tx),
+    loadProvidersTx(tx, [providerId]).then((entries) => entries[0]),
+  ]);
+
+  if (!provider) {
+    throw new Error("ØªØ¹Ø°Ø± Ø§Ù„Ø¹Ø«ÙˆØ± Ø¹Ù„Ù‰ Ù…Ù„Ù Ø§Ù„Ù…Ø²ÙˆÙ‘Ø¯.");
+  }
+
+  return {
+    catalog,
+    offerings: provider.serviceOfferings ?? [],
+  };
+};
+
+const loadProviderPricingAdminDataTx = async (tx: PrismaTx) => {
+  const providers = await loadProvidersTx(tx);
+
+  return {
+    pendingReviews: providers
+      .flatMap((provider) =>
+        (provider.serviceOfferings ?? [])
+          .filter(
+            (offering) =>
+              offering.proposedStatus === ProviderServiceProposalStatus.PendingApproval &&
+              typeof offering.proposedPriceSar === "number",
+          )
+          .map((offering) => ({
+            offeringId: offering.id,
+            providerId: provider.id,
+            providerNameAr: provider.displayName.ar,
+            productId: offering.productId,
+            productNameAr: offering.productName.ar,
+            serviceType: offering.serviceType,
+            serviceTypeLabelAr: offering.serviceTypeName.ar,
+            pricingUnitLabelAr:
+              offering.pricingUnit === ServicePricingUnit.Piece ? "Ù„Ù„Ù‚Ø·Ø¹Ø©" : "Ù„Ù„ÙˆØ­Ø¯Ø©",
+            suggestedPriceSar: offering.suggestedPriceSar,
+            currentApprovedPriceSar: offering.currentApprovedPriceSar,
+            proposedPriceSar: offering.proposedPriceSar!,
+            proposedSubmittedAt: offering.proposedSubmittedAt ?? offering.updatedAt,
+            activeApprovedAt: offering.approvedAt,
+            activeStatusLabelAr: offering.currentStatusLabelAr,
+            proposedStatusLabelAr: offering.proposedStatusLabelAr ?? "Ø¨Ø§Ù†ØªØ¸Ø§Ø± Ø§Ù„Ø§Ø¹ØªÙ…Ø§Ø¯",
+            rejectionReasonAr: offering.rejectionReasonAr,
+          })),
+      )
+      .sort((left, right) => right.proposedSubmittedAt.localeCompare(left.proposedSubmittedAt)),
+  };
 };
 
 const loadAccountsTx = async (tx: PrismaTx) => {
@@ -2317,6 +3411,576 @@ const ensureProviderOperationalAccessTx = async (tx: PrismaTx, providerId: strin
   }
 
   return provider;
+};
+
+const loadPlatformSettingsTx = async (tx: PrismaTx): Promise<PlatformSettings> => {
+  const settings = await tx.platformSettings.findFirst({
+    orderBy: { updatedAt: "desc" },
+  });
+
+  return settings ? mapPlatformSettingsRecordToDomain(settings) : { ...defaultPlatformSettings };
+};
+
+const buildPlatformFinanceSellerSnapshot = (settings: PlatformSettings): FinancialDocumentPartySnapshot => ({
+  id: "washoff-platform",
+  legalNameAr: settings.sellerLegalNameAr || settings.siteNameAr || "واش أوف",
+  addressLineAr: settings.sellerAddressAr || undefined,
+  displayNameAr: settings.siteNameAr || "واش أوف",
+  vatNumber: settings.sellerVatNumber || undefined,
+  city: settings.sellerCityAr || "الرياض",
+  email: settings.mailFromEmail,
+  phone: settings.supportPhone,
+});
+
+const buildHotelFinanceBuyerSnapshot = (hotel: HotelProfile): FinancialDocumentPartySnapshot => ({
+  id: hotel.id,
+  displayNameAr: hotel.displayName.ar,
+  legalNameAr: hotel.legalEntityName ?? hotel.displayName.ar,
+  addressLineAr: hotel.logistics.addressText || undefined,
+  city: hotel.address.city,
+  vatNumber: hotel.compliance.taxRegistrationNumber,
+  email: hotel.contact.email,
+  phone: hotel.contact.phone,
+});
+
+const buildProviderFinancePartySnapshot = (
+  provider: ProviderProfile,
+): FinancialDocumentPartySnapshot => ({
+  id: provider.id,
+  displayNameAr: provider.displayName.ar,
+  legalNameAr: provider.businessProfile.legalEntityName ?? provider.legalName.ar,
+  addressLineAr: provider.locationProfile.addressText || undefined,
+  city: provider.address.city,
+  vatNumber: provider.businessProfile.taxRegistrationNumber,
+  email: provider.businessProfile.email,
+  phone: provider.businessProfile.phone,
+});
+
+const buildHotelFinancialSnapshotForOrder = (
+  order: LaundryOrder,
+  lockedAt: string,
+): OrderFinancialSnapshot => {
+  const lines: OrderFinancialLineSnapshot[] = order.items.map((item) => {
+    const subtotalExVatSar = roundFinanceAmount(item.unitPriceSar * item.quantity);
+    const breakdown = buildFinancialBreakdown(subtotalExVatSar);
+
+    return {
+      id: `hotel-financial-line-${order.id}-${item.id}`,
+      orderItemId: item.id,
+      serviceId: item.serviceId,
+      serviceNameAr: item.serviceName.ar,
+      quantity: item.quantity,
+      unitPriceExVatSar: item.unitPriceSar,
+      subtotalExVatSar: breakdown.subtotalExVatSar,
+      vatAmountSar: breakdown.vatAmountSar,
+      totalIncVatSar: breakdown.totalIncVatSar,
+    };
+  });
+
+  return buildOrderFinancialSnapshot({
+    pricingSource: "hotel_contract",
+    lockedAt,
+    lines,
+  });
+};
+
+const findApprovedProviderCapabilityForOrderItemTx = async (
+  tx: PrismaTx,
+  providerId: string,
+  serviceId: string,
+) => {
+  const capability = await tx.providerCapability.findUnique({
+    where: {
+      providerId_serviceId: {
+        providerId,
+        serviceId,
+      },
+    },
+  });
+
+  if (
+    !capability ||
+    capability.currentStatus !== PlatformServiceCurrentStatus.Active ||
+    capability.currentApprovedPriceSar === null ||
+    !capability.activeMatrix ||
+    !capability.availableMatrix
+  ) {
+    return undefined;
+  }
+
+  return capability;
+};
+
+const buildProviderFinancialSnapshotForOrderTx = async (
+  tx: PrismaTx,
+  order: LaundryOrder,
+  lockedAt: string,
+): Promise<OrderFinancialSnapshot> => {
+  if (!order.providerId) {
+    throw new Error("لا يمكن إنشاء لقطة مالية للمزوّد قبل تحديد المزوّد المعني بالطلب.");
+  }
+
+  const lines: OrderFinancialLineSnapshot[] = [];
+
+  for (const item of order.items) {
+    const capability = await findApprovedProviderCapabilityForOrderItemTx(
+      tx,
+      order.providerId,
+      item.serviceId,
+    );
+
+    if (!capability) {
+      throw new Error("تعذر تثبيت السعر المعتمد للمزوّد لهذا الطلب المكتمل.");
+    }
+
+    const approvedPrice = toNumber(capability.currentApprovedPriceSar);
+
+    if (approvedPrice === undefined) {
+      throw new Error("تعذر تثبيت السعر المعتمد للمزوّد لهذا الطلب المكتمل.");
+    }
+
+    const subtotalExVatSar = roundFinanceAmount(approvedPrice * item.quantity);
+    const breakdown = buildFinancialBreakdown(subtotalExVatSar);
+
+    lines.push({
+      id: `provider-financial-line-${order.id}-${item.id}`,
+      orderItemId: item.id,
+      serviceId: item.serviceId,
+      serviceNameAr: item.serviceName.ar,
+      quantity: item.quantity,
+      unitPriceExVatSar: approvedPrice,
+      subtotalExVatSar: breakdown.subtotalExVatSar,
+      vatAmountSar: breakdown.vatAmountSar,
+      totalIncVatSar: breakdown.totalIncVatSar,
+    });
+  }
+
+  return buildOrderFinancialSnapshot({
+    pricingSource: "provider_approved_offering",
+    lockedAt,
+    lines,
+  });
+};
+
+const mapHotelInvoiceRecordToDomain = (
+  record: PrismaHotelInvoiceRecord,
+  lines: PrismaHotelInvoiceOrderLineRecord[],
+): HotelInvoice => ({
+  id: record.id,
+  invoiceNumber: record.invoiceNumber,
+  hotelId: record.hotelId,
+  invoiceDate: record.invoiceDate,
+  currencyCode: record.currencyCode as HotelInvoice["currencyCode"],
+  status: record.status as HotelInvoiceStatus,
+  statusLabelAr: hotelInvoiceStatusLabelsAr[record.status as HotelInvoiceStatus],
+  orderCount: record.orderCount,
+  subtotalExVatSar: toNumber(record.subtotalExVatSar) ?? 0,
+  vatAmountSar: toNumber(record.vatAmountSar) ?? 0,
+  totalIncVatSar: toNumber(record.totalIncVatSar) ?? 0,
+  seller: fromJson<FinancialDocumentPartySnapshot>(record.sellerJson, {
+    id: "washoff-platform",
+    displayNameAr: "واش أوف",
+  }),
+  buyer: fromJson<FinancialDocumentPartySnapshot>(record.buyerJson, {
+    id: record.hotelId,
+    displayNameAr: "",
+  }),
+  createdAt: record.createdAt.toISOString(),
+  updatedAt: record.updatedAt.toISOString(),
+  issuedAt: record.issuedAt.toISOString(),
+  collectedAt: toIsoString(record.collectedAt),
+  collectedByAccountId: record.collectedByAccountId ?? undefined,
+  collectedByRole: record.collectedByRole as HotelInvoice["collectedByRole"],
+  lines: lines.map((line) => ({
+    id: line.id,
+    invoiceId: line.invoiceId,
+    orderId: line.orderId,
+    roomNumber: line.roomNumber ?? undefined,
+    orderSubtotalExVatSar: toNumber(line.orderSubtotalExVatSar) ?? 0,
+    orderVatAmountSar: toNumber(line.orderVatAmountSar) ?? 0,
+    orderTotalIncVatSar: toNumber(line.orderTotalIncVatSar) ?? 0,
+  })),
+});
+
+const mapProviderStatementRecordToDomain = (
+  record: PrismaProviderStatementRecord,
+  lines: PrismaProviderStatementOrderLineRecord[],
+): ProviderSettlementStatement => ({
+  id: record.id,
+  statementNumber: record.statementNumber,
+  providerId: record.providerId,
+  statementDate: record.statementDate,
+  currencyCode: record.currencyCode as ProviderSettlementStatement["currencyCode"],
+  status: record.status as ProviderStatementStatus,
+  statusLabelAr: providerStatementStatusLabelsAr[record.status as ProviderStatementStatus],
+  orderCount: record.orderCount,
+  subtotalExVatSar: toNumber(record.subtotalExVatSar) ?? 0,
+  vatAmountSar: toNumber(record.vatAmountSar) ?? 0,
+  totalIncVatSar: toNumber(record.totalIncVatSar) ?? 0,
+  provider: fromJson<FinancialDocumentPartySnapshot>(record.providerJson, {
+    id: record.providerId,
+    displayNameAr: "",
+  }),
+  createdAt: record.createdAt.toISOString(),
+  updatedAt: record.updatedAt.toISOString(),
+  paidAt: toIsoString(record.paidAt),
+  paidByAccountId: record.paidByAccountId ?? undefined,
+  paidByRole: record.paidByRole as ProviderSettlementStatement["paidByRole"],
+  lines: lines.map((line) => ({
+    id: line.id,
+    statementId: line.statementId,
+    orderId: line.orderId,
+    roomNumber: line.roomNumber ?? undefined,
+    providerSubtotalExVatSar: toNumber(line.providerSubtotalExVatSar) ?? 0,
+    providerVatAmountSar: toNumber(line.providerVatAmountSar) ?? 0,
+    providerTotalIncVatSar: toNumber(line.providerTotalIncVatSar) ?? 0,
+  })),
+});
+
+const loadHotelInvoicesTx = async (tx: PrismaTx, hotelId?: string): Promise<HotelInvoice[]> => {
+  const invoices = await tx.hotelInvoice.findMany({
+    where: hotelId ? { hotelId } : undefined,
+    orderBy: [{ invoiceDate: "desc" }, { createdAt: "desc" }],
+  });
+
+  const lines = await tx.hotelInvoiceOrderLine.findMany({
+    where:
+      invoices.length > 0
+        ? {
+            invoiceId: {
+              in: invoices.map((invoice) => invoice.id),
+            },
+          }
+        : { invoiceId: "__none__" },
+    orderBy: { orderId: "asc" },
+  });
+  const linesByInvoiceId = new Map<string, PrismaHotelInvoiceOrderLineRecord[]>();
+
+  lines.forEach((line) => {
+    const collection = linesByInvoiceId.get(line.invoiceId) ?? [];
+    collection.push(line);
+    linesByInvoiceId.set(line.invoiceId, collection);
+  });
+
+  return invoices.map((invoice) =>
+    mapHotelInvoiceRecordToDomain(invoice, linesByInvoiceId.get(invoice.id) ?? []),
+  );
+};
+
+const loadProviderStatementsTx = async (
+  tx: PrismaTx,
+  providerId?: string,
+): Promise<ProviderSettlementStatement[]> => {
+  const statements = await tx.providerStatement.findMany({
+    where: providerId ? { providerId } : undefined,
+    orderBy: [{ statementDate: "desc" }, { createdAt: "desc" }],
+  });
+
+  const lines = await tx.providerStatementOrderLine.findMany({
+    where:
+      statements.length > 0
+        ? {
+            statementId: {
+              in: statements.map((statement) => statement.id),
+            },
+          }
+        : { statementId: "__none__" },
+    orderBy: { orderId: "asc" },
+  });
+  const linesByStatementId = new Map<string, PrismaProviderStatementOrderLineRecord[]>();
+
+  lines.forEach((line) => {
+    const collection = linesByStatementId.get(line.statementId) ?? [];
+    collection.push(line);
+    linesByStatementId.set(line.statementId, collection);
+  });
+
+  return statements.map((statement) =>
+    mapProviderStatementRecordToDomain(statement, linesByStatementId.get(statement.id) ?? []),
+  );
+};
+
+const ensureHotelInvoiceForCompletedOrderTx = async (
+  tx: PrismaTx,
+  order: LaundryOrder,
+  completedAt: string,
+): Promise<HotelInvoice> => {
+  if (!order.hotelFinancialSnapshot) {
+    throw new Error("تعذر بناء الفاتورة اليومية قبل تثبيت لقطة الفندق المالية للطلب.");
+  }
+
+  const existingLine = await tx.hotelInvoiceOrderLine.findUnique({
+    where: { orderId: order.id },
+  });
+
+  if (existingLine) {
+    const invoice = await tx.hotelInvoice.findUniqueOrThrow({
+      where: { id: existingLine.invoiceId },
+    });
+    const lines = await tx.hotelInvoiceOrderLine.findMany({
+      where: { invoiceId: existingLine.invoiceId },
+      orderBy: { orderId: "asc" },
+    });
+
+    return mapHotelInvoiceRecordToDomain(invoice, lines);
+  }
+
+  const invoiceDate = buildDailyFinanceDateKey(completedAt);
+  const invoiceId = buildHotelInvoiceId(order.hotelId, invoiceDate);
+  const [settings, hotel] = await Promise.all([
+    loadPlatformSettingsTx(tx),
+    ensureHotelOperationalAccessTx(tx, order.hotelId),
+  ]);
+  const existingInvoice = await tx.hotelInvoice.findUnique({
+    where: { id: invoiceId },
+  });
+
+  if (!existingInvoice) {
+    await tx.hotelInvoice.create({
+      data: {
+        id: invoiceId,
+        invoiceNumber: buildHotelInvoiceNumber(order.hotelId, invoiceDate),
+        hotelId: order.hotelId,
+        invoiceDate,
+        currencyCode: "SAR",
+        status: HotelInvoiceStatus.Issued,
+        orderCount: 0,
+        subtotalExVatSar: new Prisma.Decimal(0),
+        vatAmountSar: new Prisma.Decimal(0),
+        totalIncVatSar: new Prisma.Decimal(0),
+        sellerJson: toJsonInput(buildPlatformFinanceSellerSnapshot(settings)),
+        buyerJson: toJsonInput(buildHotelFinanceBuyerSnapshot(hotel)),
+        createdAt: new Date(completedAt),
+        updatedAt: new Date(completedAt),
+        issuedAt: new Date(completedAt),
+      },
+    });
+    await recordFinanceAuditEventTx({
+      tx,
+      entityType: "hotel_invoice",
+      entityId: invoiceId,
+      action: "issued",
+      nextStatus: HotelInvoiceStatus.Issued,
+      actorRole: "system",
+      occurredAt: completedAt,
+      notesAr: "تم إصدار الفاتورة اليومية عند أول طلب مكتمل في اليوم.",
+      metadata: {
+        hotelId: order.hotelId,
+        invoiceDate,
+      },
+    });
+  }
+
+  await tx.hotelInvoiceOrderLine.create({
+    data: {
+      id: `hotel-invoice-line-${order.id}`,
+      invoiceId,
+      orderId: order.id,
+      roomNumber: order.roomNumber ?? null,
+      orderSubtotalExVatSar:
+        toDecimal(order.hotelFinancialSnapshot.subtotalExVatSar) ?? new Prisma.Decimal(0),
+      orderVatAmountSar: toDecimal(order.hotelFinancialSnapshot.vatAmountSar) ?? new Prisma.Decimal(0),
+      orderTotalIncVatSar:
+        toDecimal(order.hotelFinancialSnapshot.totalIncVatSar) ?? new Prisma.Decimal(0),
+    },
+  });
+
+  const lines = await tx.hotelInvoiceOrderLine.findMany({
+    where: { invoiceId },
+    orderBy: { orderId: "asc" },
+  });
+  const totals = lines.reduce(
+    (accumulator, line) => ({
+      orderCount: accumulator.orderCount + 1,
+      subtotalExVatSar:
+        accumulator.subtotalExVatSar + (toNumber(line.orderSubtotalExVatSar) ?? 0),
+      vatAmountSar: accumulator.vatAmountSar + (toNumber(line.orderVatAmountSar) ?? 0),
+      totalIncVatSar:
+        accumulator.totalIncVatSar + (toNumber(line.orderTotalIncVatSar) ?? 0),
+    }),
+    {
+      orderCount: 0,
+      subtotalExVatSar: 0,
+      vatAmountSar: 0,
+      totalIncVatSar: 0,
+    },
+  );
+
+  const invoice = await tx.hotelInvoice.update({
+    where: { id: invoiceId },
+    data: {
+      orderCount: totals.orderCount,
+      subtotalExVatSar: toDecimal(roundFinanceAmount(totals.subtotalExVatSar)) ?? new Prisma.Decimal(0),
+      vatAmountSar: toDecimal(roundFinanceAmount(totals.vatAmountSar)) ?? new Prisma.Decimal(0),
+      totalIncVatSar: toDecimal(roundFinanceAmount(totals.totalIncVatSar)) ?? new Prisma.Decimal(0),
+      updatedAt: new Date(completedAt),
+    },
+  });
+
+  return mapHotelInvoiceRecordToDomain(invoice, lines);
+};
+
+const ensureProviderStatementForCompletedOrderTx = async (
+  tx: PrismaTx,
+  order: LaundryOrder,
+  completedAt: string,
+): Promise<ProviderSettlementStatement> => {
+  if (!order.providerId || !order.providerFinancialSnapshot) {
+    throw new Error("تعذر إنشاء كشف مستحقات المزوّد قبل تثبيت اللقطة المالية الخاصة به.");
+  }
+
+  const existingLine = await tx.providerStatementOrderLine.findUnique({
+    where: { orderId: order.id },
+  });
+
+  if (existingLine) {
+    const statement = await tx.providerStatement.findUniqueOrThrow({
+      where: { id: existingLine.statementId },
+    });
+    const lines = await tx.providerStatementOrderLine.findMany({
+      where: { statementId: existingLine.statementId },
+      orderBy: { orderId: "asc" },
+    });
+
+    return mapProviderStatementRecordToDomain(statement, lines);
+  }
+
+  const statementDate = buildDailyFinanceDateKey(completedAt);
+  const statementId = buildProviderStatementId(order.providerId, statementDate);
+  const existingStatement = await tx.providerStatement.findUnique({
+    where: { id: statementId },
+  });
+
+  if (!existingStatement) {
+    const provider = await ensureProviderOperationalAccessTx(tx, order.providerId);
+    await tx.providerStatement.create({
+      data: {
+        id: statementId,
+        statementNumber: buildProviderStatementNumber(order.providerId, statementDate),
+        providerId: order.providerId,
+        statementDate,
+        currencyCode: "SAR",
+        status: ProviderStatementStatus.PendingPayment,
+        orderCount: 0,
+        subtotalExVatSar: new Prisma.Decimal(0),
+        vatAmountSar: new Prisma.Decimal(0),
+        totalIncVatSar: new Prisma.Decimal(0),
+        providerJson: toJsonInput(buildProviderFinancePartySnapshot(provider)),
+        createdAt: new Date(completedAt),
+        updatedAt: new Date(completedAt),
+      },
+    });
+    await recordFinanceAuditEventTx({
+      tx,
+      entityType: "provider_statement",
+      entityId: statementId,
+      action: "pending_payment",
+      nextStatus: ProviderStatementStatus.PendingPayment,
+      actorRole: "system",
+      occurredAt: completedAt,
+      notesAr: "تم إنشاء كشف مستحقات يومي جديد بانتظار السداد.",
+      metadata: {
+        providerId: order.providerId,
+        statementDate,
+      },
+    });
+  }
+
+  await tx.providerStatementOrderLine.create({
+    data: {
+      id: `provider-statement-line-${order.id}`,
+      statementId,
+      orderId: order.id,
+      roomNumber: order.roomNumber ?? null,
+      providerSubtotalExVatSar:
+        toDecimal(order.providerFinancialSnapshot.subtotalExVatSar) ?? new Prisma.Decimal(0),
+      providerVatAmountSar:
+        toDecimal(order.providerFinancialSnapshot.vatAmountSar) ?? new Prisma.Decimal(0),
+      providerTotalIncVatSar:
+        toDecimal(order.providerFinancialSnapshot.totalIncVatSar) ?? new Prisma.Decimal(0),
+    },
+  });
+
+  const lines = await tx.providerStatementOrderLine.findMany({
+    where: { statementId },
+    orderBy: { orderId: "asc" },
+  });
+  const totals = lines.reduce(
+    (accumulator, line) => ({
+      orderCount: accumulator.orderCount + 1,
+      subtotalExVatSar:
+        accumulator.subtotalExVatSar + (toNumber(line.providerSubtotalExVatSar) ?? 0),
+      vatAmountSar: accumulator.vatAmountSar + (toNumber(line.providerVatAmountSar) ?? 0),
+      totalIncVatSar:
+        accumulator.totalIncVatSar + (toNumber(line.providerTotalIncVatSar) ?? 0),
+    }),
+    {
+      orderCount: 0,
+      subtotalExVatSar: 0,
+      vatAmountSar: 0,
+      totalIncVatSar: 0,
+    },
+  );
+
+  const statement = await tx.providerStatement.update({
+    where: { id: statementId },
+    data: {
+      orderCount: totals.orderCount,
+      subtotalExVatSar: toDecimal(roundFinanceAmount(totals.subtotalExVatSar)) ?? new Prisma.Decimal(0),
+      vatAmountSar: toDecimal(roundFinanceAmount(totals.vatAmountSar)) ?? new Prisma.Decimal(0),
+      totalIncVatSar: toDecimal(roundFinanceAmount(totals.totalIncVatSar)) ?? new Prisma.Decimal(0),
+      updatedAt: new Date(completedAt),
+    },
+  });
+
+  return mapProviderStatementRecordToDomain(statement, lines);
+};
+
+const finalizeCompletedOrderFinancialsTx = async (
+  tx: PrismaTx,
+  order: LaundryOrder,
+  completedAt?: string,
+): Promise<LaundryOrder> => {
+  if (order.status !== OrderStatus.Completed) {
+    return order;
+  }
+
+  const lockedAt = completedAt ?? order.statusUpdatedAt;
+  const hotelFinancialSnapshot =
+    order.hotelFinancialSnapshot ?? buildHotelFinancialSnapshotForOrder(order, lockedAt);
+  const providerFinancialSnapshot =
+    order.providerFinancialSnapshot ?? (await buildProviderFinancialSnapshotForOrderTx(tx, order, lockedAt));
+
+  await tx.order.update({
+    where: { id: order.id },
+    data: {
+      hotelFinancialSnapshotJson: toJsonInput(hotelFinancialSnapshot),
+      providerFinancialSnapshotJson: toJsonInput(providerFinancialSnapshot),
+      billedAt: order.billedAt ? new Date(order.billedAt) : new Date(lockedAt),
+      updatedAt: new Date(lockedAt),
+    },
+  });
+
+  const orderWithSnapshots: LaundryOrder = {
+    ...order,
+    hotelFinancialSnapshot,
+    providerFinancialSnapshot,
+    billedAt: order.billedAt ?? lockedAt,
+    updatedAt: lockedAt,
+  };
+  const hotelInvoice = await ensureHotelInvoiceForCompletedOrderTx(tx, orderWithSnapshots, lockedAt);
+  const providerStatement = await ensureProviderStatementForCompletedOrderTx(tx, orderWithSnapshots, lockedAt);
+
+  await tx.order.update({
+    where: { id: order.id },
+    data: {
+      hotelInvoiceId: hotelInvoice.id,
+      providerStatementId: providerStatement.id,
+      billedAt: new Date(orderWithSnapshots.billedAt ?? lockedAt),
+    },
+  });
+
+  return loadOrderOrThrowTx(tx, order.id);
 };
 
 const loadOrdersTx = async (
@@ -2751,9 +4415,22 @@ export const createPrismaBackedWashoffPlatformRepository = (
       workerEnabled: false,
       workerPollIntervalMs: 30_000,
       requestTimeSweepEnabled,
-      authMode: "session-or-dev-header",
+      authMode: "session",
       publicAppUrl: "http://localhost:8080",
     } satisfies PlatformRuntimeStatus);
+  const objectStorage: WashoffObjectStorage =
+    options.storageMode === "filesystem"
+      ? createFilesystemWashoffObjectStorage({
+          rootPath: options.storageRootPath,
+          signingSecret: options.signingSecret ?? "washoff-dev-signing-secret",
+          signedUrlTtlSeconds: options.storageSignedUrlTtlSeconds ?? 15 * 60,
+        })
+      : createDatabaseWashoffObjectStorage({
+          prisma,
+          signingSecret: options.signingSecret ?? "washoff-dev-signing-secret",
+          signedUrlTtlSeconds: options.storageSignedUrlTtlSeconds ?? 15 * 60,
+        });
+  const pdfFontPath = options.pdfFontPath;
   let operationQueue = Promise.resolve<void>(undefined);
 
   const enqueue = async <Value>(operation: () => Promise<Value>) => {
@@ -2763,6 +4440,319 @@ export const createPrismaBackedWashoffPlatformRepository = (
       () => undefined,
     );
     return nextOperation;
+  };
+
+  const storeObjectTx = async (
+    tx: PrismaTx,
+    input: Parameters<NonNullable<WashoffObjectStorage["storeObjectTx"]>>[1],
+  ) => {
+    if (objectStorage.storeObjectTx) {
+      return objectStorage.storeObjectTx(tx, input);
+    }
+
+    return objectStorage.storeObject(input);
+  };
+
+  const storeHotelRegistrationDocumentReferenceTx = async ({
+    tx,
+    hotelId,
+    kind,
+    file,
+    uploadedAt,
+  }: {
+    tx: PrismaTx;
+    hotelId: string;
+    kind: HotelRegistrationDocumentKind;
+    file: HotelRegistrationDocumentUploadInput;
+    uploadedAt: string;
+  }): Promise<HotelRegistrationStoredDocumentReference> => {
+    const validatedFile = validateHotelRegistrationDocumentUpload({ file, kind });
+    const storedObject = await storeObjectTx(tx, {
+      logicalBucket: `hotel-registration/${kind}`,
+      fileName: file.fileName,
+      mimeType: validatedFile.mimeType,
+      contentBytes: validatedFile.buffer,
+      createdAt: uploadedAt,
+      metadataJson: toJsonInput({
+        entityType: "hotel",
+        entityId: hotelId,
+        kind,
+      }),
+    });
+
+    return {
+      kind,
+      fileName: file.fileName.trim(),
+      mimeType: validatedFile.mimeType,
+      sizeBytes: validatedFile.sizeBytes,
+      uploadedAt,
+      storageKey: storedObject.id,
+      downloadPath: buildHotelDocumentDownloadPath(hotelId, kind),
+    };
+  };
+
+  const storeProviderRegistrationDocumentReferenceTx = async ({
+    tx,
+    providerId,
+    file,
+    uploadedAt,
+  }: {
+    tx: PrismaTx;
+    providerId: string;
+    file: ProviderRegistrationDocumentUploadInput;
+    uploadedAt: string;
+  }): Promise<ProviderRegistrationStoredDocumentReference> => {
+    const validatedFile = validateProviderRegistrationDocumentUpload(file);
+    const storedObject = await storeObjectTx(tx, {
+      logicalBucket: "provider-registration/commercial_registration",
+      fileName: file.fileName,
+      mimeType: validatedFile.mimeType,
+      contentBytes: validatedFile.buffer,
+      createdAt: uploadedAt,
+      metadataJson: toJsonInput({
+        entityType: "provider",
+        entityId: providerId,
+        kind: "commercial_registration",
+      }),
+    });
+
+    return {
+      kind: "commercial_registration",
+      fileName: file.fileName.trim(),
+      mimeType: validatedFile.mimeType,
+      sizeBytes: validatedFile.sizeBytes,
+      uploadedAt,
+      storageKey: storedObject.id,
+      downloadPath: buildProviderDocumentDownloadPath(providerId),
+    };
+  };
+
+  const buildHotelInvoicePdfReference = (invoice: HotelInvoice, objectId: string, qrPayloadAr: string) => ({
+    objectId,
+    generatedAt: invoice.updatedAt,
+    qrPayloadAr,
+    downloadPath: objectStorage.createSignedDownloadPath({
+      objectId,
+      fileName: `${invoice.invoiceNumber}.pdf`,
+      purpose: `hotel-invoice-${invoice.id}`,
+    }),
+  });
+
+  const buildProviderStatementPdfReference = (
+    statement: ProviderSettlementStatement,
+    objectId: string,
+    qrPayloadAr: string,
+  ) => ({
+    objectId,
+    generatedAt: statement.updatedAt,
+    qrPayloadAr,
+    downloadPath: objectStorage.createSignedDownloadPath({
+      objectId,
+      fileName: `${statement.statementNumber}.pdf`,
+      purpose: `provider-statement-${statement.id}`,
+    }),
+  });
+
+  const syncHotelInvoicePdfTx = async (tx: PrismaTx, invoice: HotelInvoice) => {
+    const existingInvoice = await tx.hotelInvoice.findUniqueOrThrow({
+      where: { id: invoice.id },
+      select: { pdfObjectId: true },
+    });
+    const generatedPdf = await generateHotelInvoicePdf({
+      invoice,
+      pdfFontPath,
+    });
+    const storedObject = await storeObjectTx(tx, {
+      objectId: existingInvoice.pdfObjectId ?? undefined,
+      logicalBucket: "finance/hotel-invoices",
+      fileName: generatedPdf.fileName,
+      mimeType: generatedPdf.mimeType,
+      contentBytes: generatedPdf.bytes,
+      createdAt: invoice.updatedAt,
+      metadataJson: toJsonInput({
+        entityType: "hotel_invoice",
+        entityId: invoice.id,
+        qrPayloadAr: generatedPdf.qrPayloadAr,
+      }),
+    });
+
+    if (existingInvoice.pdfObjectId !== storedObject.id) {
+      await tx.hotelInvoice.update({
+        where: { id: invoice.id },
+        data: {
+          pdfObjectId: storedObject.id,
+          updatedAt: new Date(invoice.updatedAt),
+        },
+      });
+    }
+
+    return {
+      ...invoice,
+      pdf: buildHotelInvoicePdfReference(invoice, storedObject.id, generatedPdf.qrPayloadAr),
+    };
+  };
+
+  const syncProviderStatementPdfTx = async (
+    tx: PrismaTx,
+    statement: ProviderSettlementStatement,
+  ) => {
+    const existingStatement = await tx.providerStatement.findUniqueOrThrow({
+      where: { id: statement.id },
+      select: { pdfObjectId: true },
+    });
+    const generatedPdf = await generateProviderStatementPdf({
+      statement,
+      pdfFontPath,
+    });
+    const storedObject = await storeObjectTx(tx, {
+      objectId: existingStatement.pdfObjectId ?? undefined,
+      logicalBucket: "finance/provider-statements",
+      fileName: generatedPdf.fileName,
+      mimeType: generatedPdf.mimeType,
+      contentBytes: generatedPdf.bytes,
+      createdAt: statement.updatedAt,
+      metadataJson: toJsonInput({
+        entityType: "provider_statement",
+        entityId: statement.id,
+        qrPayloadAr: generatedPdf.qrPayloadAr,
+      }),
+    });
+
+    if (existingStatement.pdfObjectId !== storedObject.id) {
+      await tx.providerStatement.update({
+        where: { id: statement.id },
+        data: {
+          pdfObjectId: storedObject.id,
+          updatedAt: new Date(statement.updatedAt),
+        },
+      });
+    }
+
+    return {
+      ...statement,
+      pdf: buildProviderStatementPdfReference(
+        statement,
+        storedObject.id,
+        generatedPdf.qrPayloadAr,
+      ),
+    };
+  };
+
+  const hydrateHotelInvoicePdfReferencesTx = async (tx: PrismaTx, invoices: HotelInvoice[]) => {
+    if (invoices.length === 0) {
+      return invoices;
+    }
+
+    const pdfMappings = await tx.hotelInvoice.findMany({
+      where: {
+        id: {
+          in: invoices.map((invoice) => invoice.id),
+        },
+      },
+      select: {
+        id: true,
+        pdfObjectId: true,
+      },
+    });
+    const pdfObjectIdByInvoiceId = new Map(
+      pdfMappings
+        .filter((entry) => entry.pdfObjectId)
+        .map((entry) => [entry.id, entry.pdfObjectId as string]),
+    );
+
+    return invoices.map((invoice) => {
+      const objectId = pdfObjectIdByInvoiceId.get(invoice.id);
+
+      return objectId
+        ? {
+            ...invoice,
+            pdf: buildHotelInvoicePdfReference(invoice, objectId, `رقم الفاتورة: ${invoice.invoiceNumber}`),
+          }
+        : invoice;
+    });
+  };
+
+  const hydrateProviderStatementPdfReferencesTx = async (
+    tx: PrismaTx,
+    statements: ProviderSettlementStatement[],
+  ) => {
+    if (statements.length === 0) {
+      return statements;
+    }
+
+    const pdfMappings = await tx.providerStatement.findMany({
+      where: {
+        id: {
+          in: statements.map((statement) => statement.id),
+        },
+      },
+      select: {
+        id: true,
+        pdfObjectId: true,
+      },
+    });
+    const pdfObjectIdByStatementId = new Map(
+      pdfMappings
+        .filter((entry) => entry.pdfObjectId)
+        .map((entry) => [entry.id, entry.pdfObjectId as string]),
+    );
+
+    return statements.map((statement) => {
+      const objectId = pdfObjectIdByStatementId.get(statement.id);
+
+      return objectId
+        ? {
+            ...statement,
+            pdf: buildProviderStatementPdfReference(
+              statement,
+              objectId,
+              `رقم الكشف: ${statement.statementNumber}`,
+            ),
+          }
+        : statement;
+    });
+  };
+
+  const recordFinanceAuditEventTx = async ({
+    tx,
+    entityType,
+    entityId,
+    action,
+    previousStatus,
+    nextStatus,
+    actorAccountId,
+    actorRole,
+    occurredAt,
+    notesAr,
+    metadata,
+  }: {
+    tx: PrismaTx;
+    entityType: "hotel_invoice" | "provider_statement";
+    entityId: string;
+    action: "issued" | "collected" | "pending_payment" | "paid";
+    previousStatus?: string;
+    nextStatus: string;
+    actorAccountId?: string;
+    actorRole?: AccountRole | "system";
+    occurredAt: string;
+    notesAr?: string;
+    metadata?: Record<string, unknown>;
+  }) => {
+    await tx.financeAuditEvent.create({
+      data: {
+        id: `finance-audit-${entityType}-${entityId}-${action}-${occurredAt}`,
+        entityType,
+        entityId,
+        action,
+        previousStatus: previousStatus ?? null,
+        nextStatus,
+        actorAccountId: actorAccountId ?? null,
+        actorRole: actorRole ?? null,
+        notesAr: notesAr ?? null,
+        metadataJson: metadata ? toJsonInput(metadata) : Prisma.JsonNull,
+        occurredAt: new Date(occurredAt),
+      },
+    });
   };
 
   const withDatabase = async <Value>(
@@ -2778,6 +4768,8 @@ export const createPrismaBackedWashoffPlatformRepository = (
       return prisma.$transaction(async (tx) => {
         const referenceTime = options.referenceTime ?? new Date().toISOString();
         await ensurePlatformAdminSeededTx(tx);
+        await ensurePlatformServiceCatalogSeededTx(tx);
+        await ensureLegacyProviderMatrixOfferingsSeededTx(tx);
 
         if (options.processExpiries ?? requestTimeSweepEnabled) {
           await processExpiredAssignmentsTx(tx, referenceTime);
@@ -3268,6 +5260,10 @@ export const createPrismaBackedWashoffPlatformRepository = (
               siteNameEn: command.siteNameEn,
               siteTaglineAr: command.siteTaglineAr,
               siteTaglineEn: command.siteTaglineEn,
+              sellerLegalNameAr: command.sellerLegalNameAr,
+              sellerVatNumber: command.sellerVatNumber,
+              sellerAddressAr: command.sellerAddressAr,
+              sellerCityAr: command.sellerCityAr,
               mailFromNameAr: command.mailFromNameAr,
               mailFromEmail: command.mailFromEmail,
               supportEmail: command.supportEmail ?? null,
@@ -3542,21 +5538,20 @@ export const createPrismaBackedWashoffPlatformRepository = (
           const nextNumber = selectNextEntityNumber(existingHotels.map((hotel) => hotel.id), "hotel");
           const hotelId = `hotel-${nextNumber}`;
           const accountId = `account-hotel-${nextNumber}`;
-          const environment = options.environment ?? runtimeStatus.environment;
-          const commercialRegistrationFile = await storeHotelRegistrationDocument({
+          const commercialRegistrationFile = await storeHotelRegistrationDocumentReferenceTx({
+            tx,
             hotelId,
             kind: "commercial_registration",
             file: validatedInput.commercialRegistrationFile,
             uploadedAt: timestamp,
-            environment,
           });
           const delegationLetterFile = validatedInput.delegationLetterFile
-            ? await storeHotelRegistrationDocument({
+            ? await storeHotelRegistrationDocumentReferenceTx({
+                tx,
                 hotelId,
                 kind: "delegation_letter",
                 file: validatedInput.delegationLetterFile,
                 uploadedAt: timestamp,
-                environment,
               })
             : undefined;
           await tx.hotel.create({
@@ -3646,6 +5641,7 @@ export const createPrismaBackedWashoffPlatformRepository = (
               updatedAt: new Date(timestamp),
             },
           });
+          await ensureHotelContractPricesForHotelTx(tx, hotelId, timestamp);
           await recordIdentityAuditEventTx(tx, {
             accountId,
             type: IdentityAuditEventType.AccountCreated,
@@ -3822,9 +5818,9 @@ export const createPrismaBackedWashoffPlatformRepository = (
     registerProvider: (input) =>
       withDatabase(
         async (tx) => {
-          const services = await loadServicesTx(tx);
-          const validatedInput = validateProviderRegistrationInput(input, services);
-          const normalizedEmail = await ensureUniqueAccountEmailTx(tx, validatedInput.contactEmail);
+          const catalog = await loadPlatformCatalogTx(tx);
+          const validatedInput = validateProviderServiceCatalogRegistrationInput(input, catalog);
+          const normalizedEmail = await ensureUniqueAccountEmailTx(tx, validatedInput.accountEmail);
           const existingProviders = await tx.provider.findMany({
             select: { id: true },
           });
@@ -3835,26 +5831,52 @@ export const createPrismaBackedWashoffPlatformRepository = (
           );
           const providerId = `provider-${nextNumber}`;
           const accountId = `account-provider-${nextNumber}`;
+          const commercialRegistrationFile = await storeProviderRegistrationDocumentReferenceTx({
+            tx,
+            providerId,
+            file: validatedInput.commercialRegistrationFile,
+            uploadedAt: timestamp,
+          });
           await tx.provider.create({
             data: {
               id: providerId,
               code: `PRV-REG-${String(nextNumber).padStart(3, "0")}`,
-              legalNameAr: validatedInput.providerName,
+              legalNameAr: validatedInput.legalEntityName ?? validatedInput.providerName,
               legalNameEn: null,
               displayNameAr: validatedInput.providerName,
               displayNameEn: null,
               countryCode: "SA",
               city: validatedInput.city,
               district: null,
-              line1: null,
+              line1: validatedInput.addressText,
               postalCode: null,
-              latitude: null,
-              longitude: null,
+              latitude: toDecimal(validatedInput.latitude),
+              longitude: toDecimal(validatedInput.longitude),
               timezone: "Asia/Riyadh",
-              contactName: validatedInput.contactPersonName,
+              contactName: validatedInput.accountFullName,
               contactEmail: normalizedEmail,
-              contactPhone: validatedInput.contactPhone,
+              contactPhone: validatedInput.accountPhone,
               serviceAreaCitiesJson: toJsonInput([validatedInput.city]),
+              legalEntityName: validatedInput.legalEntityName ?? null,
+              businessPhone: validatedInput.businessPhone,
+              businessEmail: validatedInput.businessEmail,
+              addressText: validatedInput.addressText,
+              taxRegistrationNumber: validatedInput.taxRegistrationNumber,
+              commercialRegistrationNumber: validatedInput.commercialRegistrationNumber,
+              commercialRegistrationFileJson: toJsonInput(commercialRegistrationFile),
+              otherServicesText: null,
+              pickupLeadTimeHours: validatedInput.pickupLeadTimeHours,
+              executionTimeHours: validatedInput.executionTimeHours,
+              deliveryTimeHours: validatedInput.deliveryTimeHours,
+              workingDaysJson: toJsonInput(validatedInput.workingDays),
+              workingHoursFrom: validatedInput.workingHoursFrom,
+              workingHoursTo: validatedInput.workingHoursTo,
+              bankName: validatedInput.bankName,
+              iban: validatedInput.iban,
+              bankAccountHolderName: validatedInput.bankAccountHolderName,
+              accountSetupName: validatedInput.accountFullName,
+              accountSetupPhone: validatedInput.accountPhone,
+              accountSetupEmail: normalizedEmail,
               active: false,
               notesAr: validatedInput.notesAr ?? null,
               onboardingStatus: OnboardingStatus.PendingApproval,
@@ -3870,9 +5892,9 @@ export const createPrismaBackedWashoffPlatformRepository = (
           await tx.account.create({
             data: {
               id: accountId,
-              fullName: validatedInput.contactPersonName,
+              fullName: validatedInput.accountFullName,
               email: normalizedEmail,
-              phone: validatedInput.contactPhone,
+              phone: validatedInput.accountPhone,
               passwordSalt: null,
               passwordHash: null,
               role: AccountRole.Provider,
@@ -3916,28 +5938,50 @@ export const createPrismaBackedWashoffPlatformRepository = (
             detailsAr: "تم إنشاء حساب مزوّد جديد بانتظار الاعتماد والتفعيل.",
             createdAt: timestamp,
           });
-          const capabilities = buildProviderCapabilitiesForRegistration(
-            validatedInput.supportedServiceIds,
-            validatedInput.city,
-            validatedInput.dailyCapacityKg,
-            services,
-          );
+          const capabilities = buildProviderCapabilityRowsForRegistration({
+            providerId,
+            pricingInput: validatedInput.servicePricing,
+            city: validatedInput.city,
+            dailyCapacityKg: validatedInput.dailyCapacityKg,
+            pickupLeadTimeHours: validatedInput.pickupLeadTimeHours,
+            workingHoursFrom: validatedInput.workingHoursFrom,
+            workingHoursTo: validatedInput.workingHoursTo,
+            matrixRows: catalog.matrixRows,
+            timestamp,
+          });
           await tx.providerCapability.createMany({
             data: capabilities.map((capability) => ({
-              providerId,
+              providerId: capability.providerId,
               serviceId: capability.serviceId,
-              serviceNameAr: capability.serviceName.ar,
-              serviceNameEn: capability.serviceName.en ?? null,
+              serviceNameAr: capability.serviceNameAr,
+              serviceNameEn: capability.serviceNameEn,
               active: capability.active,
               unitPriceSar: toDecimal(capability.unitPriceSar) ?? new Prisma.Decimal(0),
               maxDailyKg: toDecimal(capability.maxDailyKg) ?? new Prisma.Decimal(0),
               maxSingleOrderKg: toDecimal(capability.maxSingleOrderKg) ?? new Prisma.Decimal(0),
               rushSupported: capability.rushSupported,
-              supportedCityCodesJson: toJsonInput(capability.supportedCityCodes),
+              supportedCityCodesJson: capability.supportedCityCodesJson,
               defaultTurnaroundHours: capability.defaultTurnaroundHours,
               minimumPickupLeadHours: capability.minimumPickupLeadHours,
-              pickupWindowStartHour: capability.pickupWindow.startHour,
-              pickupWindowEndHour: capability.pickupWindow.endHour,
+              pickupWindowStartHour: capability.pickupWindowStartHour,
+              pickupWindowEndHour: capability.pickupWindowEndHour,
+              currentApprovedPriceSar:
+                capability.currentApprovedPriceSar === null
+                  ? null
+                  : toDecimal(capability.currentApprovedPriceSar),
+              currentStatus: capability.currentStatus,
+              proposedPriceSar:
+                capability.proposedPriceSar === null ? null : toDecimal(capability.proposedPriceSar),
+              proposedStatus: capability.proposedStatus,
+              proposedSubmittedAt: capability.proposedSubmittedAt,
+              approvedAt: capability.approvedAt,
+              approvedByAccountId: capability.approvedByAccountId,
+              approvedByRole: capability.approvedByRole,
+              rejectionReasonAr: capability.rejectionReasonAr,
+              activeMatrix: capability.activeMatrix,
+              availableMatrix: capability.availableMatrix,
+              createdAt: capability.createdAt,
+              updatedAt: capability.updatedAt,
             })),
           });
           await tx.providerCapacity.create({
@@ -4101,7 +6145,443 @@ export const createPrismaBackedWashoffPlatformRepository = (
         },
         { processExpiries: false },
       ),
-    listServiceCatalog: () => withDatabase((tx) => loadServicesTx(tx), { processExpiries: false }),
+    listServiceCatalog: (hotelId?: string) =>
+      withDatabase((tx) => loadServicesTx(tx, hotelId), { processExpiries: false }),
+
+    getPlatformServiceCatalogAdminData: () =>
+      withDatabase((tx) => loadPlatformCatalogTx(tx), { processExpiries: false }),
+
+    upsertPlatformProduct: (command) =>
+      withDatabase(
+        async (tx) => {
+          const timestamp = new Date().toISOString();
+          const normalizedName = requireTextField(command.nameAr, "Ø§Ø³Ù… Ø§Ù„Ù…Ù†ØªØ¬");
+
+          if (command.id) {
+            const existing = await tx.platformProduct.findUnique({
+              where: { id: command.id },
+            });
+
+            if (!existing) {
+              throw new Error("ØªØ¹Ø°Ø± Ø§Ù„Ø¹Ø«ÙˆØ± Ø¹Ù„Ù‰ Ø§Ù„Ù…Ù†ØªØ¬ Ø§Ù„Ù…Ø·Ù„ÙˆØ¨.");
+            }
+
+            const updated = await tx.platformProduct.update({
+              where: { id: command.id },
+              data: {
+                nameAr: normalizedName,
+                active: command.active,
+                updatedAt: new Date(timestamp),
+              },
+            });
+
+            for (const serviceType of DEFAULT_PLATFORM_SERVICE_CATALOG.serviceTypes) {
+              const localizedName = buildServiceCatalogItemName(normalizedName, serviceType.code);
+              const localizedDescription = buildServiceCatalogItemDescription(
+                normalizedName,
+                serviceType.code,
+              );
+
+              await tx.service.updateMany({
+                where: {
+                  productId: updated.id,
+                  serviceType: serviceType.code,
+                },
+                data: {
+                  nameAr: localizedName.ar,
+                  nameEn: localizedName.en ?? null,
+                  descriptionAr: localizedDescription.ar,
+                  descriptionEn: localizedDescription.en ?? null,
+                  updatedAt: new Date(timestamp),
+                },
+              });
+            }
+
+            return {
+              id: updated.id,
+              code: updated.code,
+              name: {
+                ar: updated.nameAr,
+                en: updated.nameEn ?? undefined,
+              },
+              active: updated.active,
+              sortOrder: updated.sortOrder,
+              createdAt: updated.createdAt.toISOString(),
+              updatedAt: updated.updatedAt.toISOString(),
+            };
+          }
+
+          const products = await tx.platformProduct.findMany({
+            select: {
+              sortOrder: true,
+            },
+          });
+          const nextSortOrder =
+            products.reduce((currentMax, product) => Math.max(currentMax, product.sortOrder), 0) + 1;
+          const productCode = `custom_product_${nextSortOrder}`;
+          const productId = `product-${productCode}`;
+
+          const created = await tx.platformProduct.create({
+            data: {
+              id: productId,
+              code: productCode,
+              nameAr: normalizedName,
+              nameEn: null,
+              active: command.active,
+              sortOrder: nextSortOrder,
+              createdAt: new Date(timestamp),
+              updatedAt: new Date(timestamp),
+            },
+          });
+
+          const nextMatrixSortOrder =
+            (await tx.service.aggregate({
+              _max: {
+                sortOrder: true,
+              },
+              where: {
+                productId: {
+                  not: null,
+                },
+              },
+            }))._max.sortOrder ?? 0;
+
+          for (const [index, serviceType] of DEFAULT_PLATFORM_SERVICE_CATALOG.serviceTypes.entries()) {
+            const localizedName = buildServiceCatalogItemName(normalizedName, serviceType.code);
+            const localizedDescription = buildServiceCatalogItemDescription(
+              normalizedName,
+              serviceType.code,
+            );
+
+            await tx.service.create({
+              data: {
+                id: `svc-${productCode}-${serviceType.code}`,
+                code: `svc_${productCode}_${serviceType.code}`,
+                nameAr: localizedName.ar,
+                nameEn: localizedName.en ?? null,
+                descriptionAr: localizedDescription.ar,
+                descriptionEn: localizedDescription.en ?? null,
+                category: mapServiceTypeToCategory(serviceType.code),
+                billingUnit: ServiceBillingUnit.Piece,
+                defaultUnitPriceSar: new Prisma.Decimal(0),
+                defaultTurnaroundHours: getDefaultTurnaroundHoursForServiceType(serviceType.code),
+                supportsRush: getDefaultRushSupportForServiceType(serviceType.code),
+                active: false,
+                productId,
+                serviceType: serviceType.code,
+                pricingUnit: ServicePricingUnit.Piece,
+                suggestedPriceSar: null,
+                isAvailable: false,
+                sortOrder: nextMatrixSortOrder + index + 1,
+                createdAt: new Date(timestamp),
+                updatedAt: new Date(timestamp),
+              },
+            });
+          }
+
+          return {
+            id: created.id,
+            code: created.code,
+            name: {
+              ar: created.nameAr,
+              en: created.nameEn ?? undefined,
+            },
+            active: created.active,
+            sortOrder: created.sortOrder,
+            createdAt: created.createdAt.toISOString(),
+            updatedAt: created.updatedAt.toISOString(),
+          };
+        },
+        { processExpiries: false },
+      ),
+
+    updatePlatformServiceMatrix: (command) =>
+      withDatabase(
+        async (tx) => {
+          const existing = await tx.service.findUnique({
+            where: { id: command.matrixRowId },
+          });
+
+          if (!existing || !existing.productId || !existing.serviceType) {
+            throw new Error("ØªØ¹Ø°Ø± Ø§Ù„Ø¹Ø«ÙˆØ± Ø¹Ù„Ù‰ ØµÙ Ø§Ù„Ø®Ø¯Ù…Ø© Ø§Ù„Ù‚ÙŠØ§Ø³ÙŠØ© Ø§Ù„Ù…Ø·Ù„ÙˆØ¨.");
+          }
+
+          const timestamp = new Date().toISOString();
+          const nextIsAvailable = command.isAvailable ?? existing.isAvailable;
+          const nextActive = command.active ?? existing.active;
+          const nextSuggestedPrice =
+            command.suggestedPriceSar === undefined
+              ? toNumber(existing.suggestedPriceSar)
+              : requirePositiveNumberField(command.suggestedPriceSar, "Ø§Ù„Ø³Ø¹Ø± Ø§Ù„Ø§Ø³ØªØ±Ø´Ø§Ø¯ÙŠ");
+
+          await tx.service.update({
+            where: { id: command.matrixRowId },
+            data: {
+              active: nextActive,
+              isAvailable: nextIsAvailable,
+              suggestedPriceSar: nextIsAvailable ? toDecimal(nextSuggestedPrice) : null,
+              defaultUnitPriceSar: nextIsAvailable
+                ? toDecimal(nextSuggestedPrice ?? toNumber(existing.defaultUnitPriceSar) ?? 0) ??
+                  existing.defaultUnitPriceSar
+                : existing.defaultUnitPriceSar,
+              updatedAt: new Date(timestamp),
+            },
+          });
+
+          await tx.providerCapability.updateMany({
+            where: { serviceId: command.matrixRowId },
+            data: {
+              activeMatrix: nextActive,
+              availableMatrix: nextIsAvailable,
+              updatedAt: new Date(timestamp),
+            },
+          });
+
+          const catalog = await loadPlatformCatalogTx(tx);
+          const updatedRow = catalog.matrixRows.find((row) => row.id === command.matrixRowId);
+
+          if (!updatedRow) {
+            throw new Error("ØªØ¹Ø°Ø± Ø§Ø³ØªØ¹Ø§Ø¯Ø© ØµÙ Ø§Ù„Ø®Ø¯Ù…Ø© Ø¨Ø¹Ø¯ Ø§Ù„ØªØ­Ø¯ÙŠØ«.");
+          }
+
+          return updatedRow;
+        },
+        { processExpiries: false },
+      ),
+
+    getProviderServiceManagement: (providerId = DEFAULT_PROVIDER_ID) =>
+      withDatabase(
+        (tx) => loadProviderServiceManagementTx(tx, providerId),
+        { processExpiries: false },
+      ),
+
+    submitProviderServicePricing: ({ providerId = DEFAULT_PROVIDER_ID, offerings }) =>
+      withDatabase(
+        async (tx) => {
+          const [provider, catalog] = await Promise.all([
+            loadProvidersTx(tx, [providerId]).then((entries) => entries[0]),
+            loadPlatformCatalogTx(tx),
+          ]);
+
+          if (!provider) {
+            throw new Error("ØªØ¹Ø°Ø± Ø§Ù„Ø¹Ø«ÙˆØ± Ø¹Ù„Ù‰ Ù…Ù„Ù Ø§Ù„Ù…Ø²ÙˆÙ‘Ø¯.");
+          }
+
+          const normalizedOfferings = normalizeProviderServicePricingEntries(
+            offerings,
+            catalog.matrixRows,
+          );
+          const timestamp = new Date().toISOString();
+          const maxDailyKg = provider.currentCapacity.totalKg;
+          const maxSingleOrderKg = Math.max(Math.round(maxDailyKg * 0.3), 25);
+          const pickupWindowStartHour = parseWorkingHourForProviderCapability(
+            provider.operatingProfile.workingHoursFrom,
+            8,
+          );
+          const pickupWindowEndHour = parseWorkingHourForProviderCapability(
+            provider.operatingProfile.workingHoursTo,
+            22,
+          );
+          const matrixById = new Map(catalog.matrixRows.map((row) => [row.id, row]));
+
+          for (const entry of normalizedOfferings) {
+            const matrixRow = matrixById.get(entry.serviceId);
+
+            if (!matrixRow) {
+              continue;
+            }
+
+            const serviceType = matrixRow.serviceTypeId as PlatformServiceTypeCode;
+            const compositeKey = {
+              providerId_serviceId: {
+                providerId,
+                serviceId: entry.serviceId,
+              },
+            } as const;
+            const existing = await tx.providerCapability.findUnique({
+              where: compositeKey,
+            });
+
+            if (existing) {
+              await tx.providerCapability.update({
+                where: compositeKey,
+                data: {
+                  unitPriceSar:
+                    existing.currentApprovedPriceSar ??
+                    toDecimal(entry.proposedPriceSar) ??
+                    existing.unitPriceSar,
+                  maxDailyKg: toDecimal(maxDailyKg) ?? existing.maxDailyKg,
+                  maxSingleOrderKg:
+                    toDecimal(maxSingleOrderKg) ?? existing.maxSingleOrderKg,
+                  rushSupported: getDefaultRushSupportForServiceType(serviceType),
+                  supportedCityCodesJson: toJsonInput([provider.address.city]),
+                  defaultTurnaroundHours: getDefaultTurnaroundHoursForServiceType(serviceType),
+                  minimumPickupLeadHours: provider.operatingProfile.pickupLeadTimeHours,
+                  pickupWindowStartHour,
+                  pickupWindowEndHour,
+                  proposedPriceSar: toDecimal(entry.proposedPriceSar),
+                  proposedStatus: ProviderServiceProposalStatus.PendingApproval,
+                  proposedSubmittedAt: new Date(timestamp),
+                  rejectionReasonAr: null,
+                  activeMatrix: matrixRow.active,
+                  availableMatrix: matrixRow.isAvailable,
+                  updatedAt: new Date(timestamp),
+                },
+              });
+              continue;
+            }
+
+            const [createdCapability] = buildProviderCapabilityRowsForRegistration({
+              providerId,
+              pricingInput: [entry],
+              city: provider.address.city,
+              dailyCapacityKg: maxDailyKg,
+              pickupLeadTimeHours: provider.operatingProfile.pickupLeadTimeHours,
+              workingHoursFrom: provider.operatingProfile.workingHoursFrom,
+              workingHoursTo: provider.operatingProfile.workingHoursTo,
+              matrixRows: catalog.matrixRows,
+              timestamp,
+            });
+
+            await tx.providerCapability.create({
+              data: {
+                providerId: createdCapability.providerId,
+                serviceId: createdCapability.serviceId,
+                serviceNameAr: createdCapability.serviceNameAr,
+                serviceNameEn: createdCapability.serviceNameEn,
+                active: createdCapability.active,
+                unitPriceSar: toDecimal(createdCapability.unitPriceSar) ?? new Prisma.Decimal(0),
+                maxDailyKg: toDecimal(createdCapability.maxDailyKg) ?? new Prisma.Decimal(0),
+                maxSingleOrderKg:
+                  toDecimal(createdCapability.maxSingleOrderKg) ?? new Prisma.Decimal(0),
+                rushSupported: createdCapability.rushSupported,
+                supportedCityCodesJson: createdCapability.supportedCityCodesJson,
+                defaultTurnaroundHours: createdCapability.defaultTurnaroundHours,
+                minimumPickupLeadHours: createdCapability.minimumPickupLeadHours,
+                pickupWindowStartHour: createdCapability.pickupWindowStartHour,
+                pickupWindowEndHour: createdCapability.pickupWindowEndHour,
+                currentApprovedPriceSar: null,
+                currentStatus: createdCapability.currentStatus,
+                proposedPriceSar:
+                  toDecimal(createdCapability.proposedPriceSar) ?? new Prisma.Decimal(0),
+                proposedStatus: createdCapability.proposedStatus,
+                proposedSubmittedAt: createdCapability.proposedSubmittedAt,
+                approvedAt: null,
+                approvedByAccountId: null,
+                approvedByRole: null,
+                rejectionReasonAr: null,
+                activeMatrix: createdCapability.activeMatrix,
+                availableMatrix: createdCapability.availableMatrix,
+                createdAt: createdCapability.createdAt,
+                updatedAt: createdCapability.updatedAt,
+              },
+            });
+          }
+
+          return loadProviderServiceManagementTx(tx, providerId);
+        },
+        { processExpiries: false },
+      ),
+
+    getProviderPricingAdminData: () =>
+      withDatabase((tx) => loadProviderPricingAdminDataTx(tx), { processExpiries: false }),
+
+    approveProviderServicePricing: (offeringId) =>
+      withDatabase(
+        async (tx) => {
+          const pendingCapabilities = await tx.providerCapability.findMany({
+            where: {
+              proposedStatus: ProviderServiceProposalStatus.PendingApproval,
+            },
+          });
+          const capability = pendingCapabilities.find(
+            (entry) => buildProviderOfferingId(entry.providerId, entry.serviceId) === offeringId,
+          );
+
+          if (!capability || capability.proposedPriceSar === null) {
+            throw new Error("Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø·Ù„Ø¨ ØªØ³Ø¹ÙŠØ± Ù…Ø¹Ù„Ù‚ Ù„Ù„Ø§Ø¹ØªÙ…Ø§Ø¯ Ù„Ù‡Ø°Ø§ Ø§Ù„Ø¹Ø±Ø¶.");
+          }
+
+          const timestamp = new Date().toISOString();
+          await tx.providerCapability.update({
+            where: {
+              providerId_serviceId: {
+                providerId: capability.providerId,
+                serviceId: capability.serviceId,
+              },
+            },
+            data: {
+              active: true,
+              unitPriceSar: capability.proposedPriceSar,
+              currentApprovedPriceSar: capability.proposedPriceSar,
+              currentStatus: PlatformServiceCurrentStatus.Active,
+              proposedPriceSar: null,
+              proposedStatus: null,
+              proposedSubmittedAt: null,
+              approvedAt: new Date(timestamp),
+              approvedByAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
+              approvedByRole: AccountRole.Admin,
+              rejectionReasonAr: null,
+              updatedAt: new Date(timestamp),
+            },
+          });
+
+          const provider = (await loadProvidersTx(tx, [capability.providerId]))[0];
+          const offering = provider?.serviceOfferings.find((entry) => entry.id === offeringId);
+
+          if (!offering) {
+            throw new Error("ØªØ¹Ø°Ø± Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø§Ù„Ø¹Ø±Ø¶ Ø¨Ø¹Ø¯ Ø§Ø¹ØªÙ…Ø§Ø¯Ù‡.");
+          }
+
+          return offering;
+        },
+        { processExpiries: false },
+      ),
+
+    rejectProviderServicePricing: (command) =>
+      withDatabase(
+        async (tx) => {
+          const pendingCapabilities = await tx.providerCapability.findMany({
+            where: {
+              proposedStatus: ProviderServiceProposalStatus.PendingApproval,
+            },
+          });
+          const capability = pendingCapabilities.find(
+            (entry) => buildProviderOfferingId(entry.providerId, entry.serviceId) === command.offeringId,
+          );
+
+          if (!capability) {
+            throw new Error("Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø·Ù„Ø¨ ØªØ³Ø¹ÙŠØ± Ù…Ø¹Ù„Ù‚ ÙŠÙ…ÙƒÙ† Ø±ÙØ¶Ù‡.");
+          }
+
+          const timestamp = new Date().toISOString();
+          await tx.providerCapability.update({
+            where: {
+              providerId_serviceId: {
+                providerId: capability.providerId,
+                serviceId: capability.serviceId,
+              },
+            },
+            data: {
+              proposedStatus: ProviderServiceProposalStatus.Rejected,
+              rejectionReasonAr: normalizeOptionalTextField(command.rejectionReasonAr),
+              updatedAt: new Date(timestamp),
+            },
+          });
+
+          const provider = (await loadProvidersTx(tx, [capability.providerId]))[0];
+          const offering = provider?.serviceOfferings.find(
+            (entry) => entry.id === command.offeringId,
+          );
+
+          if (!offering) {
+            throw new Error("ØªØ¹Ø°Ø± Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø§Ù„Ø¹Ø±Ø¶ Ø¨Ø¹Ø¯ Ø±ÙØ¶Ù‡.");
+          }
+
+          return offering;
+        },
+        { processExpiries: false },
+      ),
 
     listAllOrders: () =>
       withDatabase((tx) =>
@@ -4148,13 +6628,110 @@ export const createPrismaBackedWashoffPlatformRepository = (
         });
       }),
 
+    getHotelBillingData: (hotelId = DEFAULT_HOTEL_ID) =>
+      withDatabase(async (tx) => {
+        const hotel = await ensureHotelOperationalAccessTx(tx, hotelId);
+        const invoices = await hydrateHotelInvoicePdfReferencesTx(
+          tx,
+          await loadHotelInvoicesTx(tx, hotel.id),
+        );
+
+        return {
+          hotelName: hotel.displayName.ar,
+          invoices,
+          summary: {
+            issuedInvoicesCount: invoices.filter((invoice) => invoice.status === HotelInvoiceStatus.Issued).length,
+            collectedInvoicesCount: invoices.filter((invoice) => invoice.status === HotelInvoiceStatus.Collected).length,
+            outstandingTotalIncVatSar: roundFinanceAmount(
+              invoices
+                .filter((invoice) => invoice.status !== HotelInvoiceStatus.Collected)
+                .reduce((sum, invoice) => sum + invoice.totalIncVatSar, 0),
+            ),
+            totalInvoicedIncVatSar: roundFinanceAmount(
+              invoices.reduce((sum, invoice) => sum + invoice.totalIncVatSar, 0),
+            ),
+          },
+        };
+      }),
+
+    getProviderFinanceData: (providerId = DEFAULT_PROVIDER_ID) =>
+      withDatabase(async (tx) => {
+        const provider = await ensureProviderOperationalAccessTx(tx, providerId);
+        const statements = await hydrateProviderStatementPdfReferencesTx(
+          tx,
+          await loadProviderStatementsTx(tx, provider.id),
+        );
+
+        return {
+          providerName: provider.displayName.ar,
+          statements,
+          summary: {
+            pendingStatementsCount: statements.filter(
+              (statement) => statement.status === ProviderStatementStatus.PendingPayment,
+            ).length,
+            paidStatementsCount: statements.filter(
+              (statement) => statement.status === ProviderStatementStatus.Paid,
+            ).length,
+            pendingTotalIncVatSar: roundFinanceAmount(
+              statements
+                .filter((statement) => statement.status === ProviderStatementStatus.PendingPayment)
+                .reduce((sum, statement) => sum + statement.totalIncVatSar, 0),
+            ),
+            totalEarnedIncVatSar: roundFinanceAmount(
+              statements.reduce((sum, statement) => sum + statement.totalIncVatSar, 0),
+            ),
+          },
+        };
+      }),
+
+    getAdminFinanceData: () =>
+      withDatabase(async (tx) => {
+        const [hotelInvoices, providerStatements] = await Promise.all([
+          hydrateHotelInvoicePdfReferencesTx(tx, await loadHotelInvoicesTx(tx)),
+          hydrateProviderStatementPdfReferencesTx(tx, await loadProviderStatementsTx(tx)),
+        ]);
+        const todayDateKey = buildDailyFinanceDateKey(new Date().toISOString());
+        const summary: AdminFinanceSummary = {
+          todayHotelInvoiceTotalIncVatSar: roundFinanceAmount(
+            hotelInvoices
+              .filter((invoice) => invoice.invoiceDate === todayDateKey)
+              .reduce((sum, invoice) => sum + invoice.totalIncVatSar, 0),
+          ),
+          todayProviderStatementTotalIncVatSar: roundFinanceAmount(
+            providerStatements
+              .filter((statement) => statement.statementDate === todayDateKey)
+              .reduce((sum, statement) => sum + statement.totalIncVatSar, 0),
+          ),
+          grossMarginExVatSar: roundFinanceAmount(
+            hotelInvoices.reduce((sum, invoice) => sum + invoice.subtotalExVatSar, 0) -
+              providerStatements.reduce((sum, statement) => sum + statement.subtotalExVatSar, 0),
+          ),
+          outputVatTotalSar: roundFinanceAmount(
+            hotelInvoices.reduce((sum, invoice) => sum + invoice.vatAmountSar, 0),
+          ),
+          inputVatTotalSar: roundFinanceAmount(
+            providerStatements.reduce((sum, statement) => sum + statement.vatAmountSar, 0),
+          ),
+          netVatPositionSar: roundFinanceAmount(
+            hotelInvoices.reduce((sum, invoice) => sum + invoice.vatAmountSar, 0) -
+              providerStatements.reduce((sum, statement) => sum + statement.vatAmountSar, 0),
+          ),
+        };
+
+        return {
+          summary,
+          hotelInvoices,
+          providerStatements,
+        };
+      }),
+
     createHotelOrder: (input) =>
       withDatabase(async (tx) => {
         const hotelId = input.hotelId ?? DEFAULT_HOTEL_ID;
         await ensureHotelOperationalAccessTx(tx, hotelId);
         const [hotels, services, providers, existingOrders] = await Promise.all([
           loadHotelsTx(tx),
-          loadServicesTx(tx),
+          loadServicesTx(tx, hotelId),
           loadProvidersTx(tx).then((entries) => entries.filter(isProviderOperationallyApproved)),
           tx.order.findMany({
             select: { id: true },
@@ -4166,25 +6743,29 @@ export const createPrismaBackedWashoffPlatformRepository = (
           throw new Error("تعذر العثور على ملف الفندق المرتبط بالحساب الحالي.");
         }
 
-        const validatedInput = validateCreateHotelOrderInput(input, services);
+        const validatedInput = validateHotelConsoleOrderInput(input, services);
         const orderNumber = selectNextOrderNumber(existingOrders.map((order) => order.id));
         const orderId = `ORD-${orderNumber}`;
         const serviceMap = new Map(services.map((service) => [service.id, service]));
-        const items = buildOrderItems({
+        const items = buildItemizedOrderItems({
           orderId,
-          serviceIds: validatedInput.serviceIds,
-          totalItemCount: validatedInput.itemCount,
+          items: validatedInput.items,
           serviceMap,
         });
         const estimatedSubtotalSar = items.reduce(
           (sum, item) => sum + item.estimatedLineTotalSar,
           0,
         );
+        if (existingInvoice.status === HotelInvoiceStatus.Collected) {
+          throw new Error("تم تحصيل هذه الفاتورة مسبقًا ولا يمكن إعادة تحصيلها.");
+        }
+
         const timestamp = new Date().toISOString();
         const submittedOrder: LaundryOrder = {
           id: orderId,
           hotelId: hotel.id,
           hotelSnapshot: buildHotelSnapshot(hotel),
+          roomNumber: validatedInput.roomNumber,
           assignmentMode: OrderAssignmentMode.Auto,
           status: OrderStatus.Submitted,
           priority: validatedInput.priority,
@@ -4257,6 +6838,7 @@ export const createPrismaBackedWashoffPlatformRepository = (
           data: {
             id: orderId,
             hotelId: hotel.id,
+            roomNumber: validatedInput.roomNumber,
             providerId: null,
             hotelSnapshotJson: toJsonInput(submittedOrder.hotelSnapshot),
             providerSnapshotJson: Prisma.JsonNull,
@@ -4573,7 +7155,141 @@ export const createPrismaBackedWashoffPlatformRepository = (
           });
         }
 
-        return loadOrderOrThrowTx(tx, order.id);
+        const completedOrder = await loadOrderOrThrowTx(tx, order.id);
+        const finalizedOrder = await finalizeCompletedOrderFinancialsTx(
+          tx,
+          completedOrder,
+          completedOrder.statusUpdatedAt,
+        );
+
+        if (finalizedOrder.hotelInvoiceId) {
+          const invoice = (
+            await loadHotelInvoicesTx(tx, finalizedOrder.hotelId)
+          ).find((entry) => entry.id === finalizedOrder.hotelInvoiceId);
+
+          if (invoice) {
+            await syncHotelInvoicePdfTx(tx, invoice);
+          }
+        }
+
+        if (finalizedOrder.providerStatementId && finalizedOrder.providerId) {
+          const statement = (
+            await loadProviderStatementsTx(tx, finalizedOrder.providerId)
+          ).find((entry) => entry.id === finalizedOrder.providerStatementId);
+
+          if (statement) {
+            await syncProviderStatementPdfTx(tx, statement);
+          }
+        }
+
+        return finalizedOrder;
+      }),
+
+    markHotelInvoiceCollected: ({ invoiceId, actorAccountId = DEFAULT_ADMIN_ACCOUNT_ID }) =>
+      withDatabase(async (tx) => {
+        const existingInvoice = await tx.hotelInvoice.findUnique({
+          where: { id: invoiceId },
+        });
+
+        if (!existingInvoice) {
+          throw new Error("Unable to find the requested invoice.");
+        }
+
+        if (existingInvoice.status === HotelInvoiceStatus.Collected) {
+          throw new Error("This invoice has already been collected and cannot be collected again.");
+        }
+
+        const timestamp = new Date().toISOString();
+        const updatedInvoice = await tx.hotelInvoice.update({
+          where: { id: invoiceId },
+          data: {
+            status: HotelInvoiceStatus.Collected,
+            collectedAt: new Date(timestamp),
+            collectedByAccountId: actorAccountId,
+            collectedByRole: AccountRole.Admin,
+            updatedAt: new Date(timestamp),
+          },
+        });
+        await recordFinanceAuditEventTx({
+          tx,
+          entityType: "hotel_invoice",
+          entityId: invoiceId,
+          action: "collected",
+          previousStatus: existingInvoice.status,
+          nextStatus: HotelInvoiceStatus.Collected,
+          actorAccountId,
+          actorRole: AccountRole.Admin,
+          occurredAt: timestamp,
+          notesAr: "تم تحصيل الفاتورة من لوحة الإدارة المالية.",
+        });
+        const lines = await tx.hotelInvoiceOrderLine.findMany({
+          where: { invoiceId },
+          orderBy: { orderId: "asc" },
+        });
+
+        return syncHotelInvoicePdfTx(tx, mapHotelInvoiceRecordToDomain(updatedInvoice, lines));
+      }),
+
+    markProviderStatementPaid: ({ statementId, actorAccountId = DEFAULT_ADMIN_ACCOUNT_ID }) =>
+      withDatabase(async (tx) => {
+        const existingStatement = await tx.providerStatement.findUnique({
+          where: { id: statementId },
+        });
+
+        if (!existingStatement) {
+          throw new Error("تعذر العثور على كشف مستحقات المزوّد المطلوب.");
+        }
+
+        if (existingStatement.status === ProviderStatementStatus.Paid) {
+          throw new Error("تم سداد هذا الكشف مسبقًا ولا يمكن إعادة السداد.");
+        }
+
+        const timestamp = new Date().toISOString();
+        const updatedStatement = await tx.providerStatement.update({
+          where: { id: statementId },
+          data: {
+            status: ProviderStatementStatus.Paid,
+            paidAt: new Date(timestamp),
+            paidByAccountId: actorAccountId,
+            paidByRole: AccountRole.Admin,
+            updatedAt: new Date(timestamp),
+          },
+        });
+        await recordFinanceAuditEventTx({
+          tx,
+          entityType: "provider_statement",
+          entityId: statementId,
+          action: "paid",
+          previousStatus: existingStatement.status,
+          nextStatus: ProviderStatementStatus.Paid,
+          actorAccountId,
+          actorRole: AccountRole.Admin,
+          occurredAt: timestamp,
+          notesAr: "تم تعليم كشف المستحقات كمسدد من لوحة الإدارة المالية.",
+        });
+        const lines = await tx.providerStatementOrderLine.findMany({
+          where: { statementId },
+          orderBy: { orderId: "asc" },
+        });
+        const paidOrderIds = lines.map((line) => line.orderId);
+
+        if (paidOrderIds.length > 0) {
+          await tx.order.updateMany({
+            where: {
+              id: {
+                in: paidOrderIds,
+              },
+            },
+            data: {
+              settledAt: new Date(timestamp),
+            },
+          });
+        }
+
+        return syncProviderStatementPdfTx(
+          tx,
+          mapProviderStatementRecordToDomain(updatedStatement, lines),
+        );
       }),
 
     rejectIncomingOrder: (orderId, providerId = DEFAULT_PROVIDER_ID) =>

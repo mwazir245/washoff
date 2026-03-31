@@ -37,6 +37,10 @@ const buildEditableState = (settings: PlatformSettings) => ({
   siteNameEn: settings.siteNameEn,
   siteTaglineAr: settings.siteTaglineAr,
   siteTaglineEn: settings.siteTaglineEn,
+  sellerLegalNameAr: settings.sellerLegalNameAr,
+  sellerVatNumber: settings.sellerVatNumber,
+  sellerAddressAr: settings.sellerAddressAr,
+  sellerCityAr: settings.sellerCityAr,
   mailFromNameAr: settings.mailFromNameAr,
   mailFromEmail: settings.mailFromEmail,
   supportEmail: settings.supportEmail ?? "",
@@ -270,6 +274,62 @@ const AdminSettingsPage = () => {
                 value={formState.siteTaglineEn}
                 onChange={(event) =>
                   setFormState((current) => (current ? { ...current, siteTaglineEn: event.target.value } : current))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sellerLegalNameAr">
+                {language === "en" ? "Seller legal name (Arabic)" : "الاسم النظامي للبائع"}
+              </Label>
+              <Input
+                id="sellerLegalNameAr"
+                value={formState.sellerLegalNameAr}
+                onChange={(event) =>
+                  setFormState((current) =>
+                    current ? { ...current, sellerLegalNameAr: event.target.value } : current,
+                  )
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sellerVatNumber">
+                {language === "en" ? "Seller VAT number" : "الرقم الضريبي للمنصة"}
+              </Label>
+              <Input
+                id="sellerVatNumber"
+                value={formState.sellerVatNumber}
+                onChange={(event) =>
+                  setFormState((current) =>
+                    current ? { ...current, sellerVatNumber: event.target.value } : current,
+                  )
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sellerAddressAr">
+                {language === "en" ? "Seller address (Arabic)" : "عنوان البائع"}
+              </Label>
+              <Textarea
+                id="sellerAddressAr"
+                value={formState.sellerAddressAr}
+                onChange={(event) =>
+                  setFormState((current) =>
+                    current ? { ...current, sellerAddressAr: event.target.value } : current,
+                  )
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sellerCityAr">
+                {language === "en" ? "Seller city (Arabic)" : "مدينة البائع"}
+              </Label>
+              <Input
+                id="sellerCityAr"
+                value={formState.sellerCityAr}
+                onChange={(event) =>
+                  setFormState((current) =>
+                    current ? { ...current, sellerCityAr: event.target.value } : current,
+                  )
                 }
               />
             </div>

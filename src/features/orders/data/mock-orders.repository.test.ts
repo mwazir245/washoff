@@ -12,16 +12,26 @@ import {
   ReassignmentReason,
 } from "@/features/orders/model";
 import {
+  acceptIncomingOrder,
   activateAccount,
+  advanceProviderOrderExecution,
   approveHotelRegistration,
   approveProviderRegistration,
+  approveProviderServicePricing,
+  confirmHotelOrderCompletion,
   createHotelOrder,
   expirePendingAssignment,
+  getAdminFinanceData,
+  getHotelBillingData,
   getHotelProfile,
   getPlatformPageContent,
   getPlatformSettings,
+  getProviderFinanceData,
+  getProviderPricingAdminData,
   getProviderProfile,
   listIdentityAuditEvents,
+  markHotelInvoiceCollected,
+  markProviderStatementPaid,
   listPlatformContentAudit,
   listPlatformContentEntries,
   listPlatformSettingsAudit,
@@ -45,6 +55,12 @@ import {
 
 const DEFAULT_PASSWORD = "Washoff123!";
 const DEFAULT_ADMIN_PASSWORD = "Zajillema2@123";
+const DEFAULT_REQUESTED_SERVICE_ID = "svc-thobe-dry_clean";
+const DEFAULT_PROVIDER_SERVICE_PRICING = [
+  { serviceId: DEFAULT_REQUESTED_SERVICE_ID, proposedPriceSar: 12.65 },
+  { serviceId: "svc-shirt-iron", proposedPriceSar: 3.45 },
+  { serviceId: "svc-bedsheet-wash_and_iron", proposedPriceSar: 11.5 },
+];
 
 const extractActivationToken = (activationPath: string) => {
   return new URL(activationPath, "https://washoff.local").searchParams.get("token") ?? "";
@@ -58,6 +74,14 @@ const signInAs = async (email: string, password = DEFAULT_PASSWORD) => {
   const session = await login({ email, password });
   storeClientSession(session);
   return session;
+};
+
+const approvePendingPricingForProvider = async (providerId: string) => {
+  const review = await getProviderPricingAdminData();
+
+  for (const submission of review.pendingReviews.filter((entry) => entry.providerId === providerId)) {
+    await approveProviderServicePricing(submission.offeringId);
+  }
 };
 
 const buildHotelRegistrationInput = (overrides: Record<string, unknown> = {}) => ({
@@ -88,6 +112,176 @@ const buildHotelRegistrationInput = (overrides: Record<string, unknown> = {}) =>
   contactPhone: "0500000000",
   ...overrides,
 });
+/*
+  it("creates daily hotel invoices and provider statements from completed orders without duplicate inclusion", async () => {
+    await signInAs("hotel.ops@washoff.sa");
+    const createdOrder = await createHotelOrder({
+      ...buildHotelOrderCommand({
+        roomNumber: "1810",
+        items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 10 }],
+        notes: "Billing validation order",
+      }),
+    });
+
+    await signInAs("provider.ops@washoff.sa");
+    await acceptIncomingOrder(createdOrder.id);
+    await advanceProviderOrderExecution({ orderId: createdOrder.id, nextStatus: OrderStatus.PickupScheduled });
+    await advanceProviderOrderExecution({ orderId: createdOrder.id, nextStatus: OrderStatus.PickedUp });
+    await advanceProviderOrderExecution({ orderId: createdOrder.id, nextStatus: OrderStatus.InProcessing });
+    await advanceProviderOrderExecution({ orderId: createdOrder.id, nextStatus: OrderStatus.QualityCheck });
+    await advanceProviderOrderExecution({ orderId: createdOrder.id, nextStatus: OrderStatus.OutForDelivery });
+    await advanceProviderOrderExecution({ orderId: createdOrder.id, nextStatus: OrderStatus.Delivered });
+
+    await signInAs("hotel.ops@washoff.sa");
+    const completedOrder = await confirmHotelOrderCompletion({ orderId: createdOrder.id });
+    const hotelBilling = await getHotelBillingData();
+
+    await signInAs("provider.ops@washoff.sa");
+    const providerFinance = await getProviderFinanceData();
+
+    const invoice = hotelBilling.invoices.find((entry) => entry.id === completedOrder.hotelInvoiceId);
+    const statement = providerFinance.statements.find(
+      (entry) => entry.id === completedOrder.providerStatementId,
+    );
+
+    expect(completedOrder.status).toBe(OrderStatus.Completed);
+    expect(completedOrder.hotelFinancialSnapshot?.pricingSource).toBe("hotel_contract");
+    expect(completedOrder.providerFinancialSnapshot?.pricingSource).toBe("provider_offering");
+    expect(invoice).toBeDefined();
+    expect(statement).toBeDefined();
+    expect(invoice?.lines).toHaveLength(1);
+    expect(statement?.lines).toHaveLength(1);
+    expect(invoice?.lines[0]?.orderId).toBe(completedOrder.id);
+    expect(statement?.lines[0]?.orderId).toBe(completedOrder.id);
+    expect(invoice?.subtotalExVatSar).toBe(completedOrder.hotelFinancialSnapshot?.subtotalExVatSar);
+    expect(invoice?.vatAmountSar).toBe(completedOrder.hotelFinancialSnapshot?.vatAmountSar);
+    expect(invoice?.totalIncVatSar).toBe(completedOrder.hotelFinancialSnapshot?.totalIncVatSar);
+    expect(statement?.subtotalExVatSar).toBe(completedOrder.providerFinancialSnapshot?.subtotalExVatSar);
+    expect(statement?.vatAmountSar).toBe(completedOrder.providerFinancialSnapshot?.vatAmountSar);
+    expect(statement?.totalIncVatSar).toBe(completedOrder.providerFinancialSnapshot?.totalIncVatSar);
+    expect(invoice?.vatAmountSar).toBe(18.98);
+    expect(invoice?.totalIncVatSar).toBe(145.48);
+    expect(statement?.vatAmountSar).toBe(18.98);
+    expect(statement?.totalIncVatSar).toBe(145.48);
+
+    const hotelBillingAfterReload = await getHotelBillingData();
+    expect(
+      hotelBillingAfterReload.invoices.find((entry) => entry.id === completedOrder.hotelInvoiceId)?.lines,
+    ).toHaveLength(1);
+
+    await signInAs("provider.ops@washoff.sa");
+    const providerFinanceAfterReload = await getProviderFinanceData();
+    expect(
+      providerFinanceAfterReload.statements.find(
+        (entry) => entry.id === completedOrder.providerStatementId,
+      )?.lines,
+    ).toHaveLength(1);
+  });
+
+  it("lets admin mark invoices as collected and provider statements as paid while keeping finance views separated", async () => {
+    await signInAs("hotel.ops@washoff.sa");
+    const createdOrder = await createHotelOrder({
+      ...buildHotelOrderCommand({
+        roomNumber: "1811",
+        items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 6 }],
+        notes: "Settlement validation order",
+      }),
+    });
+
+    await signInAs("provider.ops@washoff.sa");
+    await acceptIncomingOrder(createdOrder.id);
+    await advanceProviderOrderExecution({ orderId: createdOrder.id, nextStatus: OrderStatus.PickupScheduled });
+    await advanceProviderOrderExecution({ orderId: createdOrder.id, nextStatus: OrderStatus.PickedUp });
+    await advanceProviderOrderExecution({ orderId: createdOrder.id, nextStatus: OrderStatus.InProcessing });
+    await advanceProviderOrderExecution({ orderId: createdOrder.id, nextStatus: OrderStatus.QualityCheck });
+    await advanceProviderOrderExecution({ orderId: createdOrder.id, nextStatus: OrderStatus.OutForDelivery });
+    await advanceProviderOrderExecution({ orderId: createdOrder.id, nextStatus: OrderStatus.Delivered });
+
+    await signInAs("hotel.ops@washoff.sa");
+    const completedOrder = await confirmHotelOrderCompletion({ orderId: createdOrder.id });
+
+    await signInAs("mmekawe@hotmail.com", DEFAULT_ADMIN_PASSWORD);
+    const collectedInvoice = await markHotelInvoiceCollected({ invoiceId: completedOrder.hotelInvoiceId! });
+    const paidStatement = await markProviderStatementPaid({ statementId: completedOrder.providerStatementId! });
+    const adminFinance = await getAdminFinanceData();
+
+    expect(collectedInvoice.status).toBe("collected");
+    expect(collectedInvoice.collectedAt).toBeDefined();
+    expect(paidStatement.status).toBe("paid");
+    expect(paidStatement.paidAt).toBeDefined();
+    expect(adminFinance.hotelInvoices.some((entry) => entry.id === completedOrder.hotelInvoiceId)).toBe(true);
+    expect(
+      adminFinance.providerStatements.some((entry) => entry.id === completedOrder.providerStatementId),
+    ).toBe(true);
+
+    await signInAs("hotel.ops@washoff.sa");
+    const hotelBilling = await getHotelBillingData();
+    const hotelInvoice = hotelBilling.invoices.find((entry) => entry.id === completedOrder.hotelInvoiceId);
+
+    expect(hotelInvoice?.status).toBe("collected");
+    expect("provider" in (hotelInvoice ?? {})).toBe(false);
+
+    await signInAs("provider.ops@washoff.sa");
+    const providerFinance = await getProviderFinanceData();
+    const providerStatement = providerFinance.statements.find(
+      (entry) => entry.id === completedOrder.providerStatementId,
+    );
+
+    expect(providerStatement?.status).toBe("paid");
+    expect("buyer" in (providerStatement ?? {})).toBe(false);
+  });
+});
+
+*/
+const buildProviderRegistrationInput = (overrides: Record<string, unknown> = {}) => ({
+  providerName: "مغسلة السعة الذكية",
+  legalEntityName: "شركة المغسلة التشغيلية",
+  commercialRegistrationNumber: "1010776655",
+  taxRegistrationNumber: "300998877660003",
+  city: "الرياض",
+  businessPhone: "0550000000",
+  businessEmail: "ops@smartwash.sa",
+  addressText: "المنطقة الصناعية - الرياض",
+  latitude: 24.774265,
+  longitude: 46.738586,
+  servicePricing: DEFAULT_PROVIDER_SERVICE_PRICING,
+  dailyCapacityKg: 180,
+  pickupLeadTimeHours: 2,
+  executionTimeHours: 18,
+  deliveryTimeHours: 4,
+  workingDays: ["sunday", "monday", "tuesday", "wednesday", "thursday"],
+  workingHoursFrom: "08:00",
+  workingHoursTo: "22:00",
+  commercialRegistrationFile: {
+    fileName: "provider-commercial-registration.pdf",
+    mimeType: "application/pdf",
+    sizeBytes: 128_000,
+    contentBase64: "JVBERi0xLjQKJcTl8uXr",
+  },
+  bankName: "البنك الأهلي السعودي",
+  iban: "SA0380000000608010167519",
+  bankAccountHolderName: "شركة المغسلة التشغيلية",
+  accountFullName: "عبدالله",
+  accountPhone: "0550000000",
+  accountEmail: "ops@smartwash.sa",
+  ...overrides,
+});
+
+const buildHotelOrderCommand = (
+  overrides: Partial<{
+    hotelId: string;
+    roomNumber: string;
+    pickupAt: string;
+    notes: string;
+    items: Array<{ serviceId: string; quantity: number }>;
+  }> = {},
+) => ({
+  hotelId: overrides.hotelId,
+  roomNumber: overrides.roomNumber ?? "1208",
+  items: overrides.items ?? [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 12 }],
+  pickupAt: overrides.pickupAt ?? "2030-03-20T10:00:00+03:00",
+  notes: overrides.notes ?? "طلب تشغيلي من لوحة الفندق",
+});
 
 describe("mockOrdersRepository reassignment and identity flow", () => {
   beforeEach(() => {
@@ -99,13 +293,15 @@ describe("mockOrdersRepository reassignment and identity flow", () => {
     await signInAs("hotel.ops@washoff.sa");
 
     const createdOrder = await createHotelOrder({
-      serviceIds: ["wash_fold"],
-      itemCount: 40,
-      pickupAt: "2030-03-20T10:00:00+03:00",
-      notes: "Handle with care",
+      ...buildHotelOrderCommand({
+        roomNumber: "1208",
+        items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 40 }],
+        notes: "Handle with care",
+      }),
     });
 
     expect(createdOrder.status).toBe(OrderStatus.Assigned);
+    expect(createdOrder.roomNumber).toBe("1208");
     expect(createdOrder.providerId).toBe("provider-1");
     expect(createdOrder.providerSnapshot?.displayName.ar).toBeDefined();
     expect(createdOrder.activeAssignment?.status).toBe(AssignmentStatus.PendingAcceptance);
@@ -117,10 +313,11 @@ describe("mockOrdersRepository reassignment and identity flow", () => {
     await signInAs("hotel.ops@washoff.sa");
 
     const createdOrder = await createHotelOrder({
-      serviceIds: ["wash_fold"],
-      itemCount: 340,
-      pickupAt: "2030-03-20T10:00:00+03:00",
-      notes: "Oversized batch",
+      ...buildHotelOrderCommand({
+        roomNumber: "1301",
+        items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 340 }],
+        notes: "Oversized batch",
+      }),
     });
 
     expect(createdOrder.status).toBe(OrderStatus.PendingCapacity);
@@ -132,10 +329,11 @@ describe("mockOrdersRepository reassignment and identity flow", () => {
   it("reassigns to the next eligible provider when the current provider rejects", async () => {
     await signInAs("hotel.ops@washoff.sa");
     const createdOrder = await createHotelOrder({
-      serviceIds: ["wash_fold"],
-      itemCount: 40,
-      pickupAt: "2030-03-20T10:00:00+03:00",
-      notes: "Handle with care",
+      ...buildHotelOrderCommand({
+        roomNumber: "1401",
+        items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 40 }],
+        notes: "Handle with care",
+      }),
     });
 
     await signInAs("provider.ops@washoff.sa");
@@ -157,10 +355,11 @@ describe("mockOrdersRepository reassignment and identity flow", () => {
     await signInAs("hotel.ops@washoff.sa");
 
     const createdOrder = await createHotelOrder({
-      serviceIds: ["wash_fold"],
-      itemCount: 40,
-      pickupAt: "2030-03-20T10:00:00+03:00",
-      notes: "Handle with care",
+      ...buildHotelOrderCommand({
+        roomNumber: "1501",
+        items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 40 }],
+        notes: "Handle with care",
+      }),
     });
     const expiredOrder = await expirePendingAssignment(
       createdOrder.id,
@@ -179,10 +378,11 @@ describe("mockOrdersRepository reassignment and identity flow", () => {
   it("keeps the order unresolved in pending capacity when no alternative provider exists", async () => {
     await signInAs("hotel.ops@washoff.sa");
     const createdOrder = await createHotelOrder({
-      serviceIds: ["wash_fold"],
-      itemCount: 260,
-      pickupAt: "2030-03-20T10:00:00+03:00",
-      notes: "Large urgent batch",
+      ...buildHotelOrderCommand({
+        roomNumber: "1508",
+        items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 260 }],
+        notes: "Large urgent batch",
+      }),
     });
 
     await signInAs("provider.ops@washoff.sa");
@@ -197,15 +397,7 @@ describe("mockOrdersRepository reassignment and identity flow", () => {
 
   it("registers hotels and providers with pending approval and pending account scaffolds by default", async () => {
     const hotelRegistration = await registerHotel(buildHotelRegistrationInput());
-    const providerRegistration = await registerProvider({
-      providerName: "مغسلة السعة الذكية",
-      city: "الرياض",
-      contactPersonName: "عبدالله",
-      contactEmail: "ops@smartwash.sa",
-      contactPhone: "0550000000",
-      supportedServiceIds: ["wash_fold"],
-      dailyCapacityKg: 180,
-    });
+    const providerRegistration = await registerProvider(buildProviderRegistrationInput());
 
     expect(hotelRegistration.hotel.onboarding.status).toBe(OnboardingStatus.PendingApproval);
     expect(hotelRegistration.hotel.active).toBe(false);
@@ -227,8 +419,54 @@ describe("mockOrdersRepository reassignment and identity flow", () => {
 
     expect(providerRegistration.provider.onboarding.status).toBe(OnboardingStatus.PendingApproval);
     expect(providerRegistration.provider.active).toBe(false);
+    expect(providerRegistration.provider.businessProfile.commercialRegistrationNumber).toBe("1010776655");
+    expect(providerRegistration.provider.businessProfile.taxRegistrationNumber).toBe("300998877660003");
+    expect(providerRegistration.provider.locationProfile.addressText).toBe("المنطقة الصناعية - الرياض");
+    expect(providerRegistration.provider.address.latitude).toBe(24.774265);
+    expect(providerRegistration.provider.address.longitude).toBe(46.738586);
+    expect(providerRegistration.provider.operatingProfile.pickupLeadTimeHours).toBe(2);
+    expect(providerRegistration.provider.operatingProfile.executionTimeHours).toBe(18);
+    expect(providerRegistration.provider.operatingProfile.deliveryTimeHours).toBe(4);
+    expect(providerRegistration.provider.financialProfile.bankName).toBe("البنك الأهلي السعودي");
+    expect(providerRegistration.provider.accountSetupProfile.email).toBe("ops@smartwash.sa");
+    expect(providerRegistration.provider.businessProfile.commercialRegistrationFile.fileName).toBe(
+      "provider-commercial-registration.pdf",
+    );
     expect(providerRegistration.account.statusLabelAr).toBeDefined();
     expect(providerRegistration.account.activationPath).toBeUndefined();
+  });
+
+  it("rejects provider registration when commercial registration file type is invalid", async () => {
+    await expect(
+      registerProvider(
+        buildProviderRegistrationInput({
+          commercialRegistrationFile: {
+            fileName: "provider-commercial-registration.txt",
+            mimeType: "text/plain",
+            sizeBytes: 512,
+            contentBase64: "dGVzdA==",
+          },
+        }),
+      ),
+    ).rejects.toThrow("الصيغ المسموحة");
+  });
+
+  it("validates provider coordinates before storing the onboarding request", async () => {
+    await expect(
+      registerProvider(
+        buildProviderRegistrationInput({
+          latitude: 95,
+        }),
+      ),
+    ).rejects.toThrow("خط العرض");
+
+    await expect(
+      registerProvider(
+        buildProviderRegistrationInput({
+          longitude: 190,
+        }),
+      ),
+    ).rejects.toThrow("خط الطول");
   });
 
   it("rejects hotel registration when commercial registration file type is invalid", async () => {
@@ -300,15 +538,17 @@ describe("mockOrdersRepository reassignment and identity flow", () => {
   });
 
   it("excludes unapproved providers from matching until admin approves them", async () => {
-    await registerProvider({
-      providerName: "مغسلة انتظار الاعتماد",
-      city: "الرياض",
-      contactPersonName: "ليان",
-      contactEmail: "pending@wash.sa",
-      contactPhone: "0560000000",
-      supportedServiceIds: ["wash_fold"],
-      dailyCapacityKg: 300,
-    });
+    await registerProvider(
+      buildProviderRegistrationInput({
+        providerName: "مغسلة انتظار الاعتماد",
+        businessPhone: "0560000000",
+        businessEmail: "pending-ops@wash.sa",
+        accountFullName: "ليان",
+        accountPhone: "0560000000",
+        accountEmail: "pending@wash.sa",
+        dailyCapacityKg: 300,
+      }),
+    );
 
     const registrations = await listProviderRegistrations();
     const pendingProvider = registrations.find((provider) => provider.displayName.ar === "مغسلة انتظار الاعتماد");
@@ -317,27 +557,33 @@ describe("mockOrdersRepository reassignment and identity flow", () => {
 
     await signInAs("hotel.ops@washoff.sa");
     const order = await createHotelOrder({
-      serviceIds: ["wash_fold"],
-      itemCount: 30,
-      pickupAt: "2030-03-20T10:00:00+03:00",
-      notes: "Standard batch",
+      ...buildHotelOrderCommand({
+        roomNumber: "1601",
+        items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 30 }],
+        notes: "Standard batch",
+      }),
     });
 
     const pendingProviderLog = order.matchingLogs.find((log) => log.providerId === pendingProvider?.id);
     expect(pendingProviderLog?.eligibilityResult.reasonCodes).toContain(EligibilityReasonCode.ProviderNotApproved);
 
+    await signInAs("mmekawe@hotmail.com", DEFAULT_ADMIN_PASSWORD);
     const approvalResult = await approveProviderRegistration(
       pendingProvider!.id,
       "تمت مراجعة المزود واعتماده.",
     );
 
+    await approvePendingPricingForProvider(pendingProvider!.id);
     expect(approvalResult.account.activationPath).toContain("/activate-account?token=");
 
+    await signInAs("hotel.ops@washoff.sa");
     const nextOrder = await createHotelOrder({
-      serviceIds: ["wash_fold"],
-      itemCount: 30,
-      pickupAt: "2030-03-21T10:00:00+03:00",
-      notes: "Standard batch",
+      ...buildHotelOrderCommand({
+        roomNumber: "1602",
+        pickupAt: "2030-03-21T10:00:00+03:00",
+        items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 30 }],
+        notes: "Standard batch",
+      }),
     });
 
     const approvedProviderLog = nextOrder.matchingLogs.find((log) => log.providerId === pendingProvider?.id);
@@ -395,11 +641,13 @@ describe("mockOrdersRepository reassignment and identity flow", () => {
 
     await expect(
       createHotelOrder({
-        hotelId: hotelRegistration.hotel.id,
-        serviceIds: ["wash_fold"],
-        itemCount: 18,
-        pickupAt: "2030-03-22T10:00:00+03:00",
-        notes: "Activation-linked hotel order",
+        ...buildHotelOrderCommand({
+          hotelId: hotelRegistration.hotel.id,
+          roomNumber: "1701",
+          pickupAt: "2030-03-22T10:00:00+03:00",
+          items: [{ serviceId: DEFAULT_REQUESTED_SERVICE_ID, quantity: 18 }],
+          notes: "Activation-linked hotel order",
+        }),
       }),
     ).resolves.toMatchObject({
       hotelId: hotelRegistration.hotel.id,
@@ -407,15 +655,17 @@ describe("mockOrdersRepository reassignment and identity flow", () => {
   });
 
   it("activates approved provider accounts and unlocks provider operational access", async () => {
-    const providerRegistration = await registerProvider({
-      providerName: "مغسلة بوابة التفعيل",
-      city: "الرياض",
-      contactPersonName: "نور",
-      contactEmail: "activation-provider@washoff.sa",
-      contactPhone: "0580000000",
-      supportedServiceIds: ["wash_fold"],
-      dailyCapacityKg: 220,
-    });
+    const providerRegistration = await registerProvider(
+      buildProviderRegistrationInput({
+        providerName: "مغسلة بوابة التفعيل",
+        businessPhone: "0580000000",
+        businessEmail: "activation-provider-ops@washoff.sa",
+        accountFullName: "نور",
+        accountPhone: "0580000000",
+        accountEmail: "activation-provider@washoff.sa",
+        dailyCapacityKg: 220,
+      }),
+    );
 
     await expect(
       login({

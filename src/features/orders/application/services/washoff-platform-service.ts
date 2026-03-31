@@ -21,6 +21,8 @@ import {
   type AdminKpi,
   type ApproveHotelRegistrationCommand,
   type ApproveProviderRegistrationCommand,
+  type ApproveProviderServicePricingCommand,
+  type ApproveProviderServicePricingResult,
   type AssignProviderCommand,
   type AssignProviderPreview,
   type AuthSessionResult,
@@ -29,22 +31,37 @@ import {
   type CreateHotelOrderCommand,
   type ConfirmHotelOrderCompletionCommand,
   type FetchMatchingTransparencyResult,
+  type GetAdminFinanceDataResult,
+  type GetAdminFinancePageCommand,
+  type GetAdminFinancePageResult,
+  type GetHotelBillingDataResult,
+  type GetPlatformServiceCatalogAdminResult,
   type GetPlatformPageContentCommand,
+  type GetProviderPricingAdminDataResult,
+  type GetProviderFinanceDataResult,
+  type GetProviderServiceManagementResult,
+  type HotelBillingData,
   type HotelRegistrationResult,
   type HotelDashboardData,
   type IdentityAdminData,
   type ListPlatformContentAuditResult,
   type ListPlatformContentEntriesResult,
+  type ListAdminOrdersPageCommand,
+  type ListAdminOrdersPageResult,
   type ListPlatformSettingsAuditResult,
   type LoginCommand,
   type MatchingTransparencyEntry,
   type MatchingTransparencyOrder,
   type MonthlyOrdersDataPoint,
   type ProviderDashboardData,
+  type ProviderFinanceData,
+  type ProviderPricingAdminData,
   type ProviderRegistrationResult,
   type ProviderRank,
   type ReactivateAccountCommand,
   type ReactivateAccountResult,
+  type RejectProviderServicePricingCommand,
+  type RejectProviderServicePricingResult,
   type RegistrationLinkedAccountSummary,
   type RegisterHotelCommand,
   type RegisterProviderCommand,
@@ -60,13 +77,23 @@ import {
   type RunMatchingCommand,
   type RunMatchingResult,
   type StatusBreakdownDataPoint,
+  type SubmitProviderServicePricingCommand,
+  type SubmitProviderServicePricingResult,
   type SuspendAccountCommand,
   type SuspendAccountResult,
+  type MarkHotelInvoiceCollectedCommand,
+  type MarkHotelInvoiceCollectedResult,
+  type MarkProviderStatementPaidCommand,
+  type MarkProviderStatementPaidResult,
   type RejectAssignmentCommand,
   type ExpireAssignmentCommand,
   type AutoReassignOrderCommand,
+  type UpdatePlatformServiceMatrixCommand,
+  type UpdatePlatformServiceMatrixResult,
   type UpdatePlatformContentEntryCommand,
   type UpdatePlatformSettingsCommand,
+  type UpsertPlatformProductCommand,
+  type UpsertPlatformProductResult,
   type ValidateActivationTokenCommand,
   type ValidateActivationTokenResult,
   type ValidateResetPasswordTokenCommand,
@@ -82,6 +109,7 @@ import {
   hotelServiceLevelLabelsAr,
   matchingDecisionLabelsAr,
   onboardingStatusLabelsAr,
+  providerWorkingDayLabelsAr,
   providerExecutableOrderStatuses,
   reassignmentReasonLabelsAr,
   isOnboardingApproved,
@@ -114,7 +142,23 @@ export interface WashoffPlatformApplicationService {
   resetPassword(command: ResetPasswordCommand): Promise<ResetPasswordResult>;
   logout(sessionToken?: string): Promise<void>;
   getCurrentAccountSession(): Promise<CurrentAccountSessionResult | null>;
-  getServiceCatalog(): Promise<ServiceCatalogItem[]>;
+  getServiceCatalog(hotelId?: string): Promise<ServiceCatalogItem[]>;
+  getPlatformServiceCatalogAdminData(): Promise<GetPlatformServiceCatalogAdminResult>;
+  upsertPlatformProduct(command: UpsertPlatformProductCommand): Promise<UpsertPlatformProductResult>;
+  updatePlatformServiceMatrix(
+    command: UpdatePlatformServiceMatrixCommand,
+  ): Promise<UpdatePlatformServiceMatrixResult>;
+  getProviderServiceManagement(): Promise<GetProviderServiceManagementResult>;
+  submitProviderServicePricing(
+    command: SubmitProviderServicePricingCommand,
+  ): Promise<SubmitProviderServicePricingResult>;
+  getProviderPricingAdminData(): Promise<GetProviderPricingAdminDataResult>;
+  approveProviderServicePricing(
+    command: ApproveProviderServicePricingCommand,
+  ): Promise<ApproveProviderServicePricingResult>;
+  rejectProviderServicePricing(
+    command: RejectProviderServicePricingCommand,
+  ): Promise<RejectProviderServicePricingResult>;
   getPlatformSettings(): Promise<PlatformSettings>;
   updatePlatformSettings(command: UpdatePlatformSettingsCommand): Promise<PlatformSettings>;
   listPlatformSettingsAudit(): Promise<ListPlatformSettingsAuditResult>;
@@ -143,9 +187,21 @@ export interface WashoffPlatformApplicationService {
   autoReassignOrder(command: AutoReassignOrderCommand): Promise<LaundryOrder>;
   runAssignmentExpirySweep(referenceTime?: string): Promise<LaundryOrder[]>;
   getHotelDashboardData(): Promise<HotelDashboardData>;
+  getHotelBillingData(): Promise<HotelBillingData>;
   getProviderDashboardData(): Promise<ProviderDashboardData>;
+  getProviderFinanceData(): Promise<ProviderFinanceData>;
+  listProviders(): Promise<ProviderProfile[]>;
   getAdminDashboardData(): Promise<AdminDashboardData>;
+  getAdminFinanceData(): Promise<GetAdminFinanceDataResult>;
+  getAdminFinancePage(command: GetAdminFinancePageCommand): Promise<GetAdminFinancePageResult>;
+  markHotelInvoiceCollected(
+    command: MarkHotelInvoiceCollectedCommand,
+  ): Promise<MarkHotelInvoiceCollectedResult>;
+  markProviderStatementPaid(
+    command: MarkProviderStatementPaidCommand,
+  ): Promise<MarkProviderStatementPaidResult>;
   listAdminOrders(): Promise<LaundryOrder[]>;
+  listAdminOrdersPage(command: ListAdminOrdersPageCommand): Promise<ListAdminOrdersPageResult>;
   getAdminOnboardingData(): Promise<AdminOnboardingData>;
   calculateAdminKpis(): Promise<CalculateAdminKpisResult>;
   fetchMatchingTransparencyForAdmin(): Promise<FetchMatchingTransparencyResult>;
@@ -198,6 +254,34 @@ const resolvePublicActionUrl = (path: string, publicAppUrl?: string) => {
   const baseUrl = (publicAppUrl?.trim() || "http://localhost:8080").replace(/\/+$/, "");
   return new URL(path, `${baseUrl}/`).toString();
 };
+
+const roundToTwo = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+
+const buildHotelBillingSummary = (invoices: GetHotelBillingDataResult["invoices"]) => ({
+  issuedInvoicesCount: invoices.filter((invoice) => invoice.status === "issued").length,
+  collectedInvoicesCount: invoices.filter((invoice) => invoice.status === "collected").length,
+  outstandingTotalIncVatSar: roundToTwo(
+    invoices
+      .filter((invoice) => invoice.status === "issued")
+      .reduce((sum, invoice) => sum + invoice.totalIncVatSar, 0),
+  ),
+  totalInvoicedIncVatSar: roundToTwo(
+    invoices.reduce((sum, invoice) => sum + invoice.totalIncVatSar, 0),
+  ),
+});
+
+const buildProviderFinanceSummary = (statements: GetProviderFinanceDataResult["statements"]) => ({
+  pendingStatementsCount: statements.filter((statement) => statement.status === "pending_payment").length,
+  paidStatementsCount: statements.filter((statement) => statement.status === "paid").length,
+  pendingTotalIncVatSar: roundToTwo(
+    statements
+      .filter((statement) => statement.status === "pending_payment")
+      .reduce((sum, statement) => sum + statement.totalIncVatSar, 0),
+  ),
+  totalEarnedIncVatSar: roundToTwo(
+    statements.reduce((sum, statement) => sum + statement.totalIncVatSar, 0),
+  ),
+});
 
 const buildIdentityDeliverySummaryFromAudit = (
   event: IdentityAuditEvent,
@@ -874,10 +958,43 @@ const buildAdminOnboardingData = async (
         submittedAt: provider.onboarding.submittedAt,
         reviewedAt: provider.onboarding.reviewedAt,
         reviewNotesAr: provider.onboarding.reviewNotesAr,
-        supportedServiceNamesAr: provider.capabilities
-          .filter((capability) => capability.active)
-          .map((capability) => capability.serviceName.ar),
+        legalEntityName: provider.businessProfile.legalEntityName,
+        commercialRegistrationNumber: provider.businessProfile.commercialRegistrationNumber,
+        taxRegistrationNumber: provider.businessProfile.taxRegistrationNumber,
+        businessPhone: provider.businessProfile.phone,
+        businessEmail: provider.businessProfile.email,
+        addressText: provider.locationProfile.addressText,
+        latitude: provider.address.latitude ?? 0,
+        longitude: provider.address.longitude ?? 0,
+        supportedServiceNamesAr:
+          provider.serviceOfferings
+            ?.filter(
+              (offering) =>
+                offering.activeMatrix &&
+                offering.availableMatrix &&
+                (offering.currentStatus === "active" || offering.proposedStatus === "pending_approval"),
+            )
+            .map((offering) => `${offering.productName.ar} - ${offering.serviceTypeName.ar}`) ??
+          provider.capabilities
+            .filter((capability) => capability.active)
+            .map((capability) => capability.serviceName.ar),
         dailyCapacityKg: provider.currentCapacity.totalKg,
+        pickupLeadTimeHours: provider.operatingProfile.pickupLeadTimeHours,
+        executionTimeHours: provider.operatingProfile.executionTimeHours,
+        deliveryTimeHours: provider.operatingProfile.deliveryTimeHours,
+        workingDays: provider.operatingProfile.workingDays,
+        workingDaysLabelsAr: provider.operatingProfile.workingDays.map(
+          (workingDay) => providerWorkingDayLabelsAr[workingDay],
+        ),
+        workingHoursFrom: provider.operatingProfile.workingHoursFrom,
+        workingHoursTo: provider.operatingProfile.workingHoursTo,
+        commercialRegistrationFile: provider.businessProfile.commercialRegistrationFile,
+        bankName: provider.financialProfile.bankName,
+        iban: provider.financialProfile.iban,
+        bankAccountHolderName: provider.financialProfile.accountHolderName,
+        accountSetupName: provider.accountSetupProfile.fullName,
+        accountSetupPhone: provider.accountSetupProfile.phone,
+        accountSetupEmail: provider.accountSetupProfile.email,
         accountEmail: accountsByEntityKey.get(`provider:${provider.id}`)?.email,
         accountRole: accountsByEntityKey.get(`provider:${provider.id}`)?.role,
         accountRoleLabelAr: accountsByEntityKey.get(`provider:${provider.id}`)
@@ -1080,6 +1197,99 @@ export const createWashoffPlatformApplicationService = (
     return delivery;
   };
 
+  const buildPagedResult = <Item,>(items: Item[], page: number, pageSize: number) => {
+    const safePageSize = Math.min(Math.max(pageSize || 1, 1), 100);
+    const safePage = Math.max(page || 1, 1);
+    const total = items.length;
+    const totalPages = Math.max(1, Math.ceil(total / safePageSize));
+    const normalizedPage = Math.min(safePage, totalPages);
+    const startIndex = (normalizedPage - 1) * safePageSize;
+
+    return {
+      items: items.slice(startIndex, startIndex + safePageSize),
+      page: normalizedPage,
+      pageSize: safePageSize,
+      total,
+      totalPages,
+    };
+  };
+
+  const filterAdminOrders = (orders: LaundryOrder[], command: ListAdminOrdersPageCommand) => {
+    const normalizedSearch = command.search?.trim().toLowerCase() ?? "";
+
+    return orders.filter((order) => {
+      const matchesSearch =
+        normalizedSearch.length === 0
+          ? true
+          : [
+              order.id,
+              order.hotelSnapshot.displayName.ar,
+              order.providerSnapshot?.displayName.ar ?? "",
+              order.items.map((item) => item.serviceName.ar).join(" "),
+            ]
+              .join(" ")
+              .toLowerCase()
+              .includes(normalizedSearch);
+      const matchesStatus =
+        !command.status || command.status === "all" ? true : order.status === command.status;
+      const matchesProvider =
+        !command.providerId || command.providerId === "all"
+          ? true
+          : order.providerId === command.providerId;
+      const orderDate = order.createdAt.slice(0, 10);
+      const matchesDateFrom = command.dateFrom ? orderDate >= command.dateFrom : true;
+      const matchesDateTo = command.dateTo ? orderDate <= command.dateTo : true;
+
+      return matchesSearch && matchesStatus && matchesProvider && matchesDateFrom && matchesDateTo;
+    });
+  };
+
+  const filterAdminInvoices = (
+    invoices: GetAdminFinanceDataResult["hotelInvoices"],
+    search?: string,
+    status?: string,
+    date?: string,
+  ) => {
+    const normalizedSearch = search?.trim().toLowerCase() ?? "";
+
+    return invoices.filter((invoice) => {
+      const matchesSearch =
+        normalizedSearch.length === 0
+          ? true
+          : [invoice.invoiceNumber, invoice.buyer.displayNameAr, ...invoice.lines.map((line) => line.orderId)]
+              .join(" ")
+              .toLowerCase()
+              .includes(normalizedSearch);
+      const matchesStatus = !status || status === "all" ? true : invoice.status === status;
+      const matchesDate = date ? invoice.invoiceDate === date : true;
+
+      return matchesSearch && matchesStatus && matchesDate;
+    });
+  };
+
+  const filterAdminProviderStatements = (
+    statements: GetAdminFinanceDataResult["providerStatements"],
+    search?: string,
+    status?: string,
+    date?: string,
+  ) => {
+    const normalizedSearch = search?.trim().toLowerCase() ?? "";
+
+    return statements.filter((statement) => {
+      const matchesSearch =
+        normalizedSearch.length === 0
+          ? true
+          : [statement.statementNumber, statement.provider.displayNameAr, ...statement.lines.map((line) => line.orderId)]
+              .join(" ")
+              .toLowerCase()
+              .includes(normalizedSearch);
+      const matchesStatus = !status || status === "all" ? true : statement.status === status;
+      const matchesDate = date ? statement.statementDate === date : true;
+
+      return matchesSearch && matchesStatus && matchesDate;
+    });
+  };
+
   return {
     login: (command) => repository.login(command),
 
@@ -1133,7 +1343,24 @@ export const createWashoffPlatformApplicationService = (
 
     getCurrentAccountSession: () => repository.getCurrentAccountSession(),
 
-    getServiceCatalog: () => repository.listServiceCatalog(),
+    getServiceCatalog: (hotelId?: string) => repository.listServiceCatalog(hotelId),
+
+    getPlatformServiceCatalogAdminData: () => repository.getPlatformServiceCatalogAdminData(),
+
+    upsertPlatformProduct: (command) => repository.upsertPlatformProduct(command),
+
+    updatePlatformServiceMatrix: (command) => repository.updatePlatformServiceMatrix(command),
+
+    getProviderServiceManagement: () => repository.getProviderServiceManagement(),
+
+    submitProviderServicePricing: (command) => repository.submitProviderServicePricing(command),
+
+    getProviderPricingAdminData: () => repository.getProviderPricingAdminData(),
+
+    approveProviderServicePricing: (command) =>
+      repository.approveProviderServicePricing(command.offeringId),
+
+    rejectProviderServicePricing: (command) => repository.rejectProviderServicePricing(command),
 
     getPlatformSettings: () => repository.getPlatformSettings(),
 
@@ -1280,7 +1507,7 @@ export const createWashoffPlatformApplicationService = (
 
     const [recentOrders, serviceCatalog] = await Promise.all([
       repository.listHotelOrders(),
-      repository.listServiceCatalog(),
+      repository.listServiceCatalog(hotel.id),
     ]);
 
     const activeOrders = recentOrders.filter((order) => hotelActiveStatuses.has(order.status));
@@ -1301,6 +1528,22 @@ export const createWashoffPlatformApplicationService = (
         { title: "المكتملة", value: completedOrders.length },
         { title: "متوسط الطلب", value: averageOrderValue },
       ],
+    };
+  },
+
+  getHotelBillingData: async () => {
+    const hotel = await repository.getHotelProfile();
+
+    if (!isOnboardingApproved(hotel.onboarding)) {
+      throw new Error(HOTEL_ACCESS_NOT_APPROVED_ERROR);
+    }
+
+    const financeData = await repository.getHotelBillingData(hotel.id);
+
+    return {
+      hotelName: hotel.displayName.ar,
+      invoices: financeData.invoices,
+      summary: buildHotelBillingSummary(financeData.invoices),
     };
   },
 
@@ -1328,6 +1571,7 @@ export const createWashoffPlatformApplicationService = (
         used: usedCapacityKg,
         total: provider.currentCapacity.totalKg,
       },
+      serviceOfferings: provider.serviceOfferings ?? [],
       incomingOrders,
       activeOrders,
       metrics: [
@@ -1339,12 +1583,84 @@ export const createWashoffPlatformApplicationService = (
     };
   },
 
+  getProviderFinanceData: async () => {
+    const provider = await repository.getProviderProfile();
+
+    if (!isOnboardingApproved(provider.onboarding)) {
+      throw new Error(PROVIDER_ACCESS_NOT_APPROVED_ERROR);
+    }
+
+    const financeData = await repository.getProviderFinanceData(provider.id);
+
+    return {
+      providerName: provider.displayName.ar,
+      statements: financeData.statements,
+      summary: buildProviderFinanceSummary(financeData.statements),
+    };
+  },
+
+  listProviders: () => repository.listProviders(),
+
   getAdminDashboardData: async () => buildAdminDashboardData(repository),
+
+  getAdminFinanceData: async () => repository.getAdminFinanceData(),
+
+  getAdminFinancePage: async (command) => {
+    if (repository.getAdminFinancePage) {
+      return repository.getAdminFinancePage(command);
+    }
+
+    const financeData = await repository.getAdminFinanceData();
+
+    return {
+      summary: financeData.summary,
+      hotelInvoicesPage: buildPagedResult(
+        filterAdminInvoices(
+          financeData.hotelInvoices,
+          command.invoiceSearch,
+          command.invoiceStatus,
+          command.invoiceDate,
+        ),
+        command.invoicePage,
+        command.invoicePageSize,
+      ),
+      providerStatementsPage: buildPagedResult(
+        filterAdminProviderStatements(
+          financeData.providerStatements,
+          command.statementSearch,
+          command.statementStatus,
+          command.statementDate,
+        ),
+        command.statementPage,
+        command.statementPageSize,
+      ),
+    };
+  },
+
+  markHotelInvoiceCollected: (command) => repository.markHotelInvoiceCollected(command),
+
+  markProviderStatementPaid: (command) => repository.markProviderStatementPaid(command),
 
   listAdminOrders: async () =>
     (await repository.listAllOrders())
       .slice()
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+
+  listAdminOrdersPage: async (command) => {
+    if (repository.listAdminOrdersPage) {
+      return repository.listAdminOrdersPage(command);
+    }
+
+    const orders = (await repository.listAllOrders())
+      .slice()
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+
+    return buildPagedResult(
+      filterAdminOrders(orders, command),
+      command.page,
+      command.pageSize,
+    );
+  },
 
   getAdminOnboardingData: async () => buildAdminOnboardingData(repository),
 

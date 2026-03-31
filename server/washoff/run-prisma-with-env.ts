@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { loadWashoffEnvironment, selectDatabaseUrlForEnvironment, type WashoffEnvironment } from "./environment";
+import { loadWashoffEnvironment, selectDatabaseUrlForEnvironment, type WashoffEnvironment } from "./environment.ts";
 
 const resolveNpxInvocation = () => ({
   command: process.execPath,

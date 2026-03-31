@@ -7,9 +7,18 @@ import type {
   ActivateAccountCommand,
   AdvanceProviderOrderExecutionCommand,
   AccountAdminSummary,
+  ApproveProviderServicePricingResult,
+  GetAdminFinanceDataResult,
+  GetAdminFinancePageCommand,
+  GetAdminFinancePageResult,
+  GetHotelBillingDataResult,
   AuthSessionResult,
   ConfirmHotelOrderCompletionCommand,
   CurrentAccountSessionResult,
+  GetPlatformServiceCatalogAdminResult,
+  GetProviderPricingAdminDataResult,
+  GetProviderFinanceDataResult,
+  GetProviderServiceManagementResult,
   GetPlatformPageContentResult,
   GetPlatformRuntimeStatusResult,
   GetPlatformSettingsResult,
@@ -17,6 +26,8 @@ import type {
   ListPlatformContentAuditResult,
   ListPlatformContentEntriesResult,
   ListPlatformSettingsAuditResult,
+  ListAdminOrdersPageCommand,
+  ListAdminOrdersPageResult,
   RegistrationLinkedAccountSummary,
   IdentityAuditEventSummary,
   LoginCommand,
@@ -26,8 +37,14 @@ import type {
   ResetPasswordCommand,
   ResetPasswordResult,
   SuspendAccountResult,
+  SubmitProviderServicePricingCommand,
+  SubmitProviderServicePricingResult,
+  UpdatePlatformServiceMatrixCommand,
+  UpdatePlatformServiceMatrixResult,
   UpdatePlatformContentEntryCommand,
   UpdatePlatformContentEntryResult,
+  UpsertPlatformProductCommand,
+  UpsertPlatformProductResult,
   UpdatePlatformSettingsCommand,
   UpdatePlatformSettingsResult,
   ValidateActivationTokenCommand,
@@ -35,6 +52,12 @@ import type {
   ValidateResetPasswordTokenCommand,
   ValidateResetPasswordTokenResult,
   ProviderRegistrationResult,
+  RejectProviderServicePricingCommand,
+  RejectProviderServicePricingResult,
+  MarkHotelInvoiceCollectedResult,
+  MarkProviderStatementPaidResult,
+  MarkHotelInvoiceCollectedCommand,
+  MarkProviderStatementPaidCommand,
 } from "@/features/orders/application/contracts/platform-contracts";
 
 export interface WashoffPlatformQueryRepository {
@@ -54,8 +77,16 @@ export interface WashoffPlatformQueryRepository {
   getProviderProfile(providerId?: string): Promise<ProviderProfile>;
   listProviders(): Promise<ProviderProfile[]>;
   listProviderRegistrations(): Promise<ProviderProfile[]>;
-  listServiceCatalog(): Promise<ServiceCatalogItem[]>;
+  listServiceCatalog(hotelId?: string): Promise<ServiceCatalogItem[]>;
+  getPlatformServiceCatalogAdminData(): Promise<GetPlatformServiceCatalogAdminResult>;
+  getProviderServiceManagement(providerId?: string): Promise<GetProviderServiceManagementResult>;
+  getProviderPricingAdminData(): Promise<GetProviderPricingAdminDataResult>;
+  getHotelBillingData(hotelId?: string): Promise<GetHotelBillingDataResult>;
+  getProviderFinanceData(providerId?: string): Promise<GetProviderFinanceDataResult>;
+  getAdminFinanceData(): Promise<GetAdminFinanceDataResult>;
+  getAdminFinancePage?(command: GetAdminFinancePageCommand): Promise<GetAdminFinancePageResult>;
   listAllOrders(): Promise<LaundryOrder[]>;
+  listAdminOrdersPage?(command: ListAdminOrdersPageCommand): Promise<ListAdminOrdersPageResult>;
   listHotelOrders(hotelId?: string): Promise<LaundryOrder[]>;
   listProviderIncomingOrders(providerId?: string): Promise<LaundryOrder[]>;
   listProviderActiveOrders(providerId?: string): Promise<LaundryOrder[]>;
@@ -78,6 +109,17 @@ export interface WashoffPlatformCommandRepository {
   updatePlatformContentEntry(
     command: UpdatePlatformContentEntryCommand,
   ): Promise<UpdatePlatformContentEntryResult>;
+  upsertPlatformProduct(command: UpsertPlatformProductCommand): Promise<UpsertPlatformProductResult>;
+  updatePlatformServiceMatrix(
+    command: UpdatePlatformServiceMatrixCommand,
+  ): Promise<UpdatePlatformServiceMatrixResult>;
+  submitProviderServicePricing(
+    command: SubmitProviderServicePricingCommand,
+  ): Promise<SubmitProviderServicePricingResult>;
+  approveProviderServicePricing(offeringId: string): Promise<ApproveProviderServicePricingResult>;
+  rejectProviderServicePricing(
+    command: RejectProviderServicePricingCommand,
+  ): Promise<RejectProviderServicePricingResult>;
   registerHotel(input: HotelRegistrationInput): Promise<HotelRegistrationResult>;
   registerProvider(input: ProviderRegistrationInput): Promise<ProviderRegistrationResult>;
   approveHotelRegistration(hotelId: string, reviewNotesAr?: string): Promise<HotelRegistrationResult>;
@@ -88,6 +130,12 @@ export interface WashoffPlatformCommandRepository {
   acceptIncomingOrder(orderId: string, providerId?: string): Promise<LaundryOrder>;
   advanceProviderOrderExecution(command: AdvanceProviderOrderExecutionCommand): Promise<LaundryOrder>;
   confirmHotelOrderCompletion(command: ConfirmHotelOrderCompletionCommand): Promise<LaundryOrder>;
+  markHotelInvoiceCollected(
+    command: MarkHotelInvoiceCollectedCommand,
+  ): Promise<MarkHotelInvoiceCollectedResult>;
+  markProviderStatementPaid(
+    command: MarkProviderStatementPaidCommand,
+  ): Promise<MarkProviderStatementPaidResult>;
   rejectIncomingOrder(orderId: string, providerId?: string): Promise<LaundryOrder>;
   expirePendingAssignment(orderId: string, referenceTime?: string): Promise<LaundryOrder>;
   autoReassignOrder(

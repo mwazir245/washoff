@@ -40,16 +40,44 @@ import {
   Assignment,
   AssignmentHistory,
   AssignmentStatus,
+  buildDefaultPlatformServiceCatalog,
+  buildServiceCatalogItemDescription,
+  buildServiceCatalogItemName,
+  buildHotelFacingServiceCatalog,
+  buildHotelInvoiceId,
+  buildHotelInvoiceNumber,
+  buildPlatformCatalogMatrixLabel,
+  buildPlatformMatrixLookup,
+  buildPlatformProductLookup,
+  buildPlatformServiceTypeLookup,
+  buildDailyFinanceDateKey,
+  buildFinancialBreakdown,
+  buildOrderFinancialSnapshot,
+  appendHotelInvoiceLine,
+  appendProviderStatementLine,
+  buildProviderStatementId,
+  buildProviderStatementNumber,
+  buildProviderCapabilitiesFromApprovedOfferings,
   buildHotelDocumentDownloadPath,
+  buildProviderDocumentDownloadPath,
+  buildDefaultProviderSlaProfile,
   canTransitionOrderStatus,
   CreateHotelOrderInput,
   createEmptyScoreBreakdown,
+  createEmptySlaSummary,
   EligibilityReasonCode,
   getOrderProgressPercent,
+  getSaudiCityById,
+  getSaudiDistrictById,
+  getDistrictsForCityId,
   HOTEL_REGISTRATION_ALLOWED_DOCUMENT_MIME_TYPES,
   HOTEL_REGISTRATION_MAX_DOCUMENT_SIZE_BYTES,
   HOTEL_REGISTRATION_MAX_TOTAL_DOCUMENTS_SIZE_BYTES,
+  HOTEL_REGISTRATION_SAUDI_CITY_OPTIONS,
   HotelProfile,
+  HotelInvoice,
+  HotelInvoiceStatus,
+  hotelInvoiceStatusLabelsAr,
   hotelClassificationLabelsAr,
   HOTEL_REGISTRATION_SAUDI_CITIES_AR,
   hotelServiceLevelLabelsAr,
@@ -61,11 +89,25 @@ import {
   OnboardingStatus,
   OrderAssignmentMode,
   OrderItem,
+  OrderPartySnapshot,
   OrderPriority,
   OrderStatus,
+  PlatformProduct,
+  PlatformServiceCurrentStatus,
+  PlatformServiceMatrixRow,
+  PlatformServiceType,
+  ProviderSettlementStatement,
+  ProviderStatementStatus,
+  providerStatementStatusLabelsAr,
   ProviderCapacityStatus,
+  providerCoverageTypeLabelsAr,
   ProviderProfile,
   ProviderRegistrationInput,
+  ProviderServiceOffering,
+  ProviderServicePricingInput,
+  ProviderServiceProposalStatus,
+  type ProviderRegistrationDocumentUploadInput,
+  type ProviderWorkingDay,
   providerExecutableOrderStatuses,
   ReassignmentEvent,
   ReassignmentReason,
@@ -73,15 +115,27 @@ import {
   ServiceBillingUnit,
   ServiceCatalogItem,
   ServiceCategory,
+  ServicePricingUnit,
   Settlement,
   SettlementStatus,
   SLACheckpoint,
   SLAHistory,
   SLAStatus,
+  getDefaultRushSupportForServiceType,
+  getDefaultTurnaroundHoursForServiceType,
+  mapServiceTypeToCategory,
+  buildHotelSlaProfile,
+  buildOrderProviderSlaSnapshot,
+  buildOrderRequiredSlaSnapshot,
+  buildProviderSlaComplianceStats,
   type HotelRegistrationDocumentKind,
   type HotelRegistrationDocumentUploadInput,
   type HotelRegistrationStoredDocumentReference,
   type OrderStatusHistoryEntry,
+  type OrderFinancialLineSnapshot,
+  type ProviderCoverageType,
+  type SaudiCityId,
+  type SaudiDistrictId,
 } from "@/features/orders/model";
 import {
   createMatchingRunId,
@@ -418,6 +472,41 @@ const normalizePickupAt = (pickupAt: string) => {
   return normalized.toISOString();
 };
 
+const getStructuredLocationSeed = (cityLabel: string) => {
+  const city = HOTEL_REGISTRATION_SAUDI_CITY_OPTIONS.find((entry) => entry.nameAr === cityLabel);
+
+  if (!city) {
+    throw new Error(`تعذر مطابقة المدينة ${cityLabel} مع الماستر داتا الخاصة بالمدن.`);
+  }
+
+  const districts = getDistrictsForCityId(city.id);
+  const district = districts[0];
+
+  if (!district) {
+    throw new Error(`تعذر مطابقة حي افتراضي للمدينة ${cityLabel}.`);
+  }
+
+  return {
+    cityId: city.id,
+    city: city.nameAr,
+    districtId: district.id,
+    district: district.nameAr,
+  };
+};
+
+const buildProviderSlaComplianceSeed = (providerId: string, slaRate: number, updatedAt: string) => {
+  const totalTrackedOrders = 120;
+  const onTimeCount = Math.round(totalTrackedOrders * slaRate);
+
+  return buildProviderSlaComplianceStats({
+    totalTrackedOrders,
+    onTimePickups: onTimeCount,
+    onTimeCompletions: onTimeCount,
+    averageDelayMinutes: slaRate >= 0.97 ? 8 : slaRate >= 0.92 ? 18 : 34,
+    updatedAt,
+  });
+};
+
 const buildHotel = (
   id: string,
   code: string,
@@ -425,6 +514,7 @@ const buildHotel = (
   city: string,
 ): HotelProfile => {
   const createdAt = buildOffsetDate({ days: -90 });
+  const location = getStructuredLocationSeed(city);
   const buildPreviewDocumentReference = (
     kind: HotelRegistrationDocumentKind,
   ): HotelRegistrationStoredDocumentReference => ({
@@ -449,7 +539,10 @@ const buildHotel = (
     roomCount: 240,
     address: {
       countryCode: "SA",
-      city,
+      cityId: location.cityId,
+      city: location.city,
+      districtId: location.districtId,
+      district: location.district,
       line1: `${nameAr} - ${city}`,
       latitude: city === "الرياض" ? 24.7136 : city === "جدة" ? 21.5433 : 26.2172,
       longitude: city === "الرياض" ? 46.6753 : city === "جدة" ? 39.1728 : 50.1971,
@@ -477,7 +570,13 @@ const buildHotel = (
       commercialRegistrationFile: buildPreviewDocumentReference("commercial_registration"),
       delegationStatus: "not_provided",
     },
-    contractedServiceIds: ["wash_fold", "dry_clean", "iron", "stain_removal"],
+    slaProfile: buildHotelSlaProfile(id, "standard"),
+    contractedServiceIds: [
+      "svc-thobe-wash_and_iron",
+      "svc-thobe-dry_clean",
+      "svc-shirt-iron",
+      "svc-bedsheet-wash_and_iron",
+    ],
     active: true,
     onboarding: buildApprovedOnboarding(createdAt),
     createdAt,
@@ -485,54 +584,14 @@ const buildHotel = (
   };
 };
 
-const initialServiceCatalog: ServiceCatalogItem[] = [
-  {
-    id: "wash_fold",
-    code: "wash_fold",
-    name: buildLocalizedText("غسيل وطي"),
-    category: ServiceCategory.Laundry,
-    billingUnit: ServiceBillingUnit.Kilogram,
-    defaultUnitPriceSar: 15,
-    defaultTurnaroundHours: 24,
-    supportsRush: true,
-    active: true,
-  },
-  {
-    id: "dry_clean",
-    code: "dry_clean",
-    name: buildLocalizedText("تنظيف جاف"),
-    category: ServiceCategory.DryCleaning,
-    billingUnit: ServiceBillingUnit.Kilogram,
-    defaultUnitPriceSar: 25,
-    defaultTurnaroundHours: 48,
-    supportsRush: false,
-    active: true,
-  },
-  {
-    id: "iron",
-    code: "iron",
-    name: buildLocalizedText("كي"),
-    category: ServiceCategory.Pressing,
-    billingUnit: ServiceBillingUnit.Kilogram,
-    defaultUnitPriceSar: 8,
-    defaultTurnaroundHours: 12,
-    supportsRush: true,
-    active: true,
-  },
-  {
-    id: "stain_removal",
-    code: "stain_removal",
-    name: buildLocalizedText("إزالة بقع"),
-    category: ServiceCategory.Specialty,
-    billingUnit: ServiceBillingUnit.Kilogram,
-    defaultUnitPriceSar: 30,
-    defaultTurnaroundHours: 36,
-    supportsRush: false,
-    active: true,
-  },
-];
+const defaultPlatformServiceCatalog = buildDefaultPlatformServiceCatalog();
+const initialPlatformServiceTypes = clone(defaultPlatformServiceCatalog.serviceTypes);
+const initialPlatformProducts = clone(defaultPlatformServiceCatalog.products);
+const initialPlatformServiceMatrix = clone(defaultPlatformServiceCatalog.matrixRows);
 
-let serviceCatalog = clone(initialServiceCatalog);
+let platformServiceTypes = clone(initialPlatformServiceTypes);
+let platformProducts = clone(initialPlatformProducts);
+let platformServiceMatrix = clone(initialPlatformServiceMatrix);
 
 const initialHotelProfiles: Record<string, HotelProfile> = {
   "hotel-1": buildHotel("hotel-1", "HTL-RC-RYD", "فندق الريتز كارلتون", "الرياض"),
@@ -543,6 +602,172 @@ const initialHotelProfiles: Record<string, HotelProfile> = {
 };
 
 let hotelProfiles = clone(initialHotelProfiles);
+
+const createCatalogState = () => ({
+  serviceTypes: clone(platformServiceTypes),
+  products: clone(platformProducts),
+  matrixRows: clone(platformServiceMatrix),
+});
+
+const buildSeedProviderServiceOfferings = ({
+  providerId,
+  priceMultiplier,
+  createdAt,
+}: {
+  providerId: string;
+  priceMultiplier: number;
+  createdAt: string;
+}) => {
+  const productById = buildPlatformProductLookup(initialPlatformProducts);
+  const serviceTypeById = buildPlatformServiceTypeLookup(initialPlatformServiceTypes);
+
+  return initialPlatformServiceMatrix
+    .filter((row) => row.active && row.isAvailable && typeof row.suggestedPriceSar === "number")
+    .map<ProviderServiceOffering>((row) => {
+      const product = productById.get(row.productId);
+      const serviceType = serviceTypeById.get(row.serviceTypeId);
+
+      if (!product || !serviceType) {
+        throw new Error("تعذر إنشاء العرض التشغيلي الافتراضي للمزوّد.");
+      }
+
+      const approvedPrice = Number((row.suggestedPriceSar! * priceMultiplier).toFixed(2));
+
+      return {
+        id: `offering-${providerId}-${row.id}`,
+        providerId,
+        serviceId: row.id,
+        productId: product.id,
+        productName: product.name,
+        serviceType: serviceType.code,
+        serviceTypeName: serviceType.name,
+        pricingUnit: row.pricingUnit,
+        currentApprovedPriceSar: approvedPrice,
+        currentStatus: PlatformServiceCurrentStatus.Active,
+        currentStatusLabelAr: "نشط",
+        proposedPriceSar: undefined,
+        proposedStatus: undefined,
+        proposedStatusLabelAr: undefined,
+        proposedSubmittedAt: undefined,
+        approvedAt: createdAt,
+        approvedByAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        approvedByRole: AccountRole.Admin,
+        rejectionReasonAr: undefined,
+        suggestedPriceSar: row.suggestedPriceSar,
+        activeMatrix: row.active,
+        availableMatrix: row.isAvailable,
+        createdAt,
+        updatedAt: createdAt,
+      };
+    });
+};
+
+const buildServiceCatalogState = (offerings: ProviderServiceOffering[]) =>
+  buildHotelFacingServiceCatalog({
+    ...createCatalogState(),
+    offerings,
+  });
+
+const buildPlatformMatrixServiceState = () => {
+  const productById = buildPlatformProductLookup(platformProducts);
+  const serviceTypeById = buildPlatformServiceTypeLookup(platformServiceTypes);
+
+  return platformServiceMatrix.map<ServiceCatalogItem & {
+    sortOrder?: number;
+    createdAt?: string;
+    updatedAt?: string;
+  }>((row) => {
+    const product = productById.get(row.productId);
+    const serviceType = serviceTypeById.get(row.serviceTypeId);
+
+    return {
+      id: row.id,
+      code: row.code,
+      name:
+        product && serviceType
+          ? buildServiceCatalogItemName(product.name.ar, serviceType.code)
+          : buildLocalizedText(row.code),
+      description:
+        product && serviceType
+          ? buildServiceCatalogItemDescription(product.name.ar, serviceType.code)
+          : undefined,
+      category: serviceType ? mapServiceTypeToCategory(serviceType.code) : ServiceCategory.Specialty,
+      billingUnit: ServiceBillingUnit.Piece,
+      defaultUnitPriceSar: row.suggestedPriceSar ?? 0,
+      defaultTurnaroundHours: serviceType
+        ? getDefaultTurnaroundHoursForServiceType(serviceType.code)
+        : 24,
+      supportsRush: serviceType ? getDefaultRushSupportForServiceType(serviceType.code) : false,
+      active: row.active,
+      productId: row.productId,
+      productName: product?.name,
+      serviceType: serviceType?.code,
+      serviceTypeName: serviceType?.name,
+      pricingUnit: row.pricingUnit,
+      suggestedPriceSar: row.suggestedPriceSar,
+      isAvailable: row.isAvailable,
+      sortOrder: row.sortOrder,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  });
+};
+
+const buildProviderOfferingsFromPricingInput = ({
+  providerId,
+  pricingInput,
+  timestamp,
+}: {
+  providerId: string;
+  pricingInput: ProviderServicePricingInput[];
+  timestamp: string;
+}) => {
+  const matrixById = buildPlatformMatrixLookup(platformServiceMatrix);
+  const productById = buildPlatformProductLookup(platformProducts);
+  const serviceTypeById = buildPlatformServiceTypeLookup(platformServiceTypes);
+
+  return pricingInput.map<ProviderServiceOffering>((entry) => {
+    const matrixRow = matrixById.get(entry.serviceId);
+
+    if (!matrixRow) {
+      throw new Error("تعذر مطابقة الخدمة المطلوبة مع كتالوج المنصة.");
+    }
+
+    const product = productById.get(matrixRow.productId);
+    const serviceType = serviceTypeById.get(matrixRow.serviceTypeId);
+
+    if (!product || !serviceType) {
+      throw new Error("تعذر استكمال حفظ تسعير الخدمة القياسية.");
+    }
+
+    return {
+      id: `offering-${providerId}-${matrixRow.id}`,
+      providerId,
+      serviceId: matrixRow.id,
+      productId: product.id,
+      productName: product.name,
+      serviceType: serviceType.code,
+      serviceTypeName: serviceType.name,
+      pricingUnit: matrixRow.pricingUnit,
+      currentApprovedPriceSar: undefined,
+      currentStatus: PlatformServiceCurrentStatus.Inactive,
+      currentStatusLabelAr: "غير نشط",
+      proposedPriceSar: entry.proposedPriceSar,
+      proposedStatus: ProviderServiceProposalStatus.PendingApproval,
+      proposedStatusLabelAr: "بانتظار الاعتماد",
+      proposedSubmittedAt: timestamp,
+      approvedAt: undefined,
+      approvedByAccountId: undefined,
+      approvedByRole: undefined,
+      rejectionReasonAr: undefined,
+      suggestedPriceSar: matrixRow.suggestedPriceSar,
+      activeMatrix: matrixRow.active,
+      availableMatrix: matrixRow.isAvailable,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+  });
+};
 
 const buildProvider = (
   id: string,
@@ -555,70 +780,145 @@ const buildProvider = (
   rating: number,
   acceptanceRate: number,
   slaRate: number,
-): ProviderProfile => ({
-  id,
-  code,
-  legalName: buildLocalizedText(nameAr),
-  displayName: buildLocalizedText(nameAr),
-  address: {
-    countryCode: "SA",
-    city,
-  },
-  timezone: "Asia/Riyadh",
-  contact: {},
-  serviceAreaCities: [city, "الرياض", "جدة"],
-  capabilities: serviceCatalog.map((service) => ({
-    serviceId: service.id,
-    serviceName: service.name,
-    active: true,
-    unitPriceSar: Math.max(service.defaultUnitPriceSar - 1, 5),
-    maxDailyKg: totalKg,
-    maxSingleOrderKg: Math.round(totalKg * 0.3),
-    rushSupported: service.supportsRush,
-    supportedCityCodes: [city, "الرياض", "جدة"],
-    defaultTurnaroundHours: service.defaultTurnaroundHours,
-    minimumPickupLeadHours: 2,
-    pickupWindow: {
-      startHour: 8,
-      endHour: 22,
+): ProviderProfile => {
+  const createdAt = buildOffsetDate({ days: -120 });
+  const location = getStructuredLocationSeed(city);
+  const coverageType: ProviderCoverageType = id === "provider-2" ? "district_based" : "city_wide";
+  const coveredDistrictIds =
+    coverageType === "city_wide" ? [] : getDistrictsForCityId(location.cityId).slice(0, 2).map((entry) => entry.id);
+  const serviceOfferings = buildSeedProviderServiceOfferings({
+    providerId: id,
+    priceMultiplier: 1 + (100 - score) / 500,
+    createdAt,
+  });
+  const capabilities = buildProviderCapabilitiesFromApprovedOfferings({
+    providerId: id,
+    serviceTypes: initialPlatformServiceTypes,
+    products: initialPlatformProducts,
+    matrixRows: initialPlatformServiceMatrix,
+    offerings: serviceOfferings,
+  });
+  const maxActiveOrders = 18;
+  const currentActiveOrders = Math.max(1, Math.min(maxActiveOrders, Math.round(usedKg / 85)));
+  const complianceUpdatedAt = buildOffsetDate({ hours: -6 });
+
+  return {
+    id,
+    code,
+    legalName: buildLocalizedText(`شركة ${nameAr}`),
+    displayName: buildLocalizedText(nameAr),
+    address: {
+      countryCode: "SA",
+      cityId: location.cityId,
+      city: location.city,
+      districtId: location.districtId,
+      district: location.district,
+      line1: `${nameAr} - ${city}`,
+      latitude: city === "الرياض" ? 24.7136 : city === "جدة" ? 21.5433 : 26.4207,
+      longitude: city === "الرياض" ? 46.6753 : city === "جدة" ? 39.1728 : 50.0888,
     },
-  })),
-  currentCapacity: {
-    providerId: id,
-    date: buildOffsetDate({}).slice(0, 10),
-    totalKg,
-    committedKg: usedKg,
-    reservedKg: 0,
-    availableKg: Math.max(totalKg - usedKg, 0),
-    utilizationRatio: usedKg / totalKg,
-    status:
-      usedKg >= totalKg
-        ? ProviderCapacityStatus.Full
-        : usedKg / totalKg >= 0.8
-          ? ProviderCapacityStatus.Limited
-          : ProviderCapacityStatus.Available,
-    createdAt: buildOffsetDate({ days: -1 }),
-    updatedAt: buildOffsetDate({ minutes: -15 }),
-  },
-  performance: {
-    providerId: id,
-    rating,
-    acceptanceRate,
-    onTimePickupRate: slaRate,
-    onTimeDeliveryRate: slaRate,
-    qualityScore: score,
-    disputeRate: 0.02,
-    reassignmentRate: 0.06,
-    completedOrders: Math.round(score * 1.5),
-    cancelledOrders: 3,
-    lastEvaluatedAt: buildOffsetDate({ hours: -6 }),
-  },
-  active: true,
-  notesAr: undefined,
-  onboarding: buildApprovedOnboarding(buildOffsetDate({ days: -120 })),
-  createdAt: buildOffsetDate({ days: -120 }),
-  updatedAt: buildOffsetDate({ hours: -1 }),
-});
+    timezone: "Asia/Riyadh",
+    contact: {
+      name: "مسؤول حساب المغسلة",
+      email: `${id}@washoff.sa`,
+      phone: "0555000000",
+    },
+    serviceAreaCities: [location.city],
+    businessProfile: {
+      legalEntityName: `شركة ${nameAr}`,
+      commercialRegistrationNumber: `CR-${code.replace(/[^0-9A-Z]/gi, "")}`,
+      taxRegistrationNumber: `VAT-${code.replace(/[^0-9A-Z]/gi, "")}`,
+      phone: "0555000000",
+      email: `${id}.ops@washoff.sa`,
+      commercialRegistrationFile: {
+        kind: "commercial_registration",
+        fileName: `${code.toLowerCase()}-commercial-registration.pdf`,
+        mimeType: "application/pdf",
+        sizeBytes: 245_760,
+        uploadedAt: createdAt,
+        storageKey: `preview://providers/${id}/commercial_registration`,
+        downloadPath: buildProviderDocumentDownloadPath(id),
+      },
+    },
+    locationProfile: {
+      addressText: `${nameAr} - ${city}`,
+    },
+    coverage: {
+      cityId: location.cityId,
+      coverageType,
+      coveredDistrictIds,
+    },
+    operatingProfile: {
+      acceptanceWindowMinutes: 30,
+      pickupLeadTimeHours: 2,
+      executionTimeHours: 24,
+      deliveryTimeHours: 4,
+      workingDays: ["sunday", "monday", "tuesday", "wednesday", "thursday"],
+      workingHoursFrom: "08:00",
+      workingHoursTo: "22:00",
+    },
+    operationalLoad: {
+      currentActiveOrders,
+      maxActiveOrders,
+    },
+    slaProfile: buildDefaultProviderSlaProfile(id, {
+      acceptanceWindowMinutes: 30,
+      pickupLeadTimeHours: 2,
+      processingHours: 24,
+      deliveryWindowHours: 4,
+      minComplianceRate: 0.9,
+      maxDelayToleranceMinutes: 30,
+    }),
+    financialProfile: {
+      bankName: "البنك الأهلي السعودي",
+      iban: "SA0380000000608010167519",
+      accountHolderName: `شركة ${nameAr}`,
+    },
+    accountSetupProfile: {
+      fullName: "مسؤول حساب المغسلة",
+      phone: "0555000000",
+      email: `${id}@washoff.sa`,
+    },
+    serviceOfferings,
+    capabilities,
+    currentCapacity: {
+      providerId: id,
+      date: buildOffsetDate({}).slice(0, 10),
+      totalKg,
+      committedKg: usedKg,
+      reservedKg: 0,
+      availableKg: Math.max(totalKg - usedKg, 0),
+      utilizationRatio: usedKg / totalKg,
+      status:
+        usedKg >= totalKg
+          ? ProviderCapacityStatus.Full
+          : usedKg / totalKg >= 0.8
+            ? ProviderCapacityStatus.Limited
+            : ProviderCapacityStatus.Available,
+      createdAt: buildOffsetDate({ days: -1 }),
+      updatedAt: buildOffsetDate({ minutes: -15 }),
+    },
+    performance: {
+      providerId: id,
+      rating,
+      acceptanceRate,
+      onTimePickupRate: slaRate,
+      onTimeDeliveryRate: slaRate,
+      qualityScore: score,
+      disputeRate: 0.02,
+      reassignmentRate: 0.06,
+      completedOrders: Math.round(score * 1.5),
+      cancelledOrders: 3,
+      slaCompliance: buildProviderSlaComplianceSeed(id, slaRate, complianceUpdatedAt),
+      lastEvaluatedAt: complianceUpdatedAt,
+    },
+    active: true,
+    notesAr: undefined,
+    onboarding: buildApprovedOnboarding(createdAt),
+    createdAt,
+    updatedAt: buildOffsetDate({ hours: -1 }),
+  };
+};
 
 const initialProviderProfiles: Record<string, ProviderProfile> = {
   "provider-1": buildProvider("provider-1", "PRV-GOLD-RYD", "النظافة الذهبية", "الرياض", 95, 680, 1000, 4.9, 0.96, 0.98),
@@ -628,6 +928,10 @@ const initialProviderProfiles: Record<string, ProviderProfile> = {
 };
 
 let providerProfiles = clone(initialProviderProfiles);
+const initialProviderServiceOfferings = Object.values(initialProviderProfiles).flatMap(
+  (provider) => provider.serviceOfferings,
+);
+let providerServiceOfferings = clone(initialProviderServiceOfferings);
 
 const buildSeedAccount = ({
   id,
@@ -1436,6 +1740,76 @@ const requireCoordinateField = ({
   return normalized;
 };
 
+const requireSaudiCityField = (value: string | undefined) => {
+  const normalized = requireTextField(value, "المدينة");
+
+  if (!HOTEL_REGISTRATION_SAUDI_CITIES_AR.includes(normalized as never)) {
+    throw new Error("يرجى اختيار المدينة من القائمة المعتمدة داخل المملكة.");
+  }
+
+  return normalized as (typeof HOTEL_REGISTRATION_SAUDI_CITIES_AR)[number];
+};
+
+const requireSaudiCityIdField = (value: SaudiCityId | string | undefined, cityLabel?: string) => {
+  const normalizedValue = requireTextField(String(value ?? ""), "المدينة");
+  const city = getSaudiCityById(normalizedValue as SaudiCityId);
+
+  if (!city) {
+    throw new Error("يرجى اختيار المدينة من القائمة المعتمدة داخل المملكة.");
+  }
+
+  if (cityLabel && city.nameAr !== cityLabel) {
+    throw new Error("المدينة المختارة لا تطابق المعرّف المرتبط بها.");
+  }
+
+  return city.id;
+};
+
+const requireSaudiDistrictIdField = (
+  cityId: SaudiCityId,
+  value: SaudiDistrictId | string | undefined,
+  label = "الحي",
+) => {
+  const normalizedValue = requireTextField(String(value ?? ""), label);
+  const district = getSaudiDistrictById(normalizedValue as SaudiDistrictId);
+
+  if (!district || district.cityId !== cityId) {
+    throw new Error(`يرجى اختيار ${label} من الأحياء المتاحة للمدينة المحددة.`);
+  }
+
+  return district.id;
+};
+
+const requireTimeField = (value: string | undefined, label: string) => {
+  const normalized = requireTextField(value, label);
+
+  if (!/^\d{2}:\d{2}$/.test(normalized)) {
+    throw new Error(`يرجى إدخال ${label} بصيغة وقت صحيحة مثل 08:00.`);
+  }
+
+  return normalized;
+};
+
+const requireIbanField = (value: string | undefined) => {
+  const normalized = requireTextField(value, "رقم الآيبان").replace(/\s+/g, "").toUpperCase();
+
+  if (!/^SA[0-9A-Z]{22}$/.test(normalized)) {
+    throw new Error("يرجى إدخال رقم آيبان سعودي صالح يبدأ بـ SA.");
+  }
+
+  return normalized;
+};
+
+const normalizeWorkingDays = (workingDays: ProviderWorkingDay[] | undefined) => {
+  const normalized = Array.from(new Set((workingDays ?? []).filter(Boolean)));
+
+  if (normalized.length === 0) {
+    throw new Error("يرجى اختيار أيام العمل.");
+  }
+
+  return normalized;
+};
+
 const normalizeOptionalDateField = (value: string | undefined, label: string) => {
   const normalized = value?.trim();
 
@@ -1533,6 +1907,12 @@ const validateHotelRegistrationInput = (input: HotelRegistrationInput) => {
     hotelName: requireTextField(input.hotelName, "اسم الفندق"),
     legalEntityName: normalizeOptionalTextField(input.legalEntityName),
     city: input.city,
+    cityId: requireSaudiCityIdField(input.cityId, input.city),
+    districtId: requireSaudiDistrictIdField(
+      requireSaudiCityIdField(input.cityId, input.city),
+      input.districtId,
+      "الحي",
+    ),
     hotelClassification: input.hotelClassification,
     roomCount: requirePositiveNumberField(input.roomCount, "عدد الغرف"),
     taxRegistrationNumber: requireTextField(
@@ -1572,67 +1952,217 @@ const validateHotelRegistrationInput = (input: HotelRegistrationInput) => {
 };
 
 const validateProviderRegistrationInput = (input: ProviderRegistrationInput) => {
-  const supportedServiceIds = Array.from(
-    new Set(input.supportedServiceIds.map((serviceId) => serviceId.trim()).filter(Boolean)),
+  const servicePricingMap = new Map<string, number>();
+  const dailyCapacityKg = requirePositiveNumberField(input.dailyCapacityKg, "السعة اليومية");
+  const commercialRegistrationFile = validateHotelRegistrationDocumentUploadInput(
+    input.commercialRegistrationFile as ProviderRegistrationDocumentUploadInput,
+    "ملف السجل التجاري",
   );
-  const dailyCapacityKg = Number(input.dailyCapacityKg);
+  (input.servicePricing ?? []).forEach((entry) => {
+    const serviceId = entry.serviceId.trim();
 
-  if (supportedServiceIds.length === 0) {
-    throw new Error("اختر خدمة واحدة على الأقل للمزوّد.");
-  }
-
-  if (!Number.isFinite(dailyCapacityKg) || dailyCapacityKg <= 0) {
-    throw new Error("يرجى إدخال سعة تشغيلية يومية صحيحة.");
-  }
-
-  supportedServiceIds.forEach((serviceId) => {
-    const service = findServiceById(serviceId);
-
-    if (!service.active) {
-      throw new Error(`الخدمة ${service.name.ar} غير متاحة حالياً.`);
+    if (!serviceId) {
+      return;
     }
+
+    const matrixRow = findMatrixRowById(serviceId);
+
+    if (!matrixRow.active || !matrixRow.isAvailable) {
+      throw new Error("لا يمكن اختيار خدمة غير متاحة من كتالوج المنصة.");
+    }
+
+    const proposedPriceSar = requirePositiveNumberField(entry.proposedPriceSar, "سعر الخدمة");
+    servicePricingMap.set(serviceId, Number(proposedPriceSar.toFixed(2)));
   });
+
+  if (servicePricingMap.size === 0) {
+    throw new Error("اختر تسعيرة واحدة على الأقل من كتالوج الخدمات القياسي.");
+  }
 
   return {
     providerName: requireTextField(input.providerName, "اسم المزوّد"),
-    city: requireTextField(input.city, "المدينة"),
-    contactPersonName: requireTextField(input.contactPersonName, "اسم مسؤول التواصل"),
-    contactEmail: requireEmailField(input.contactEmail),
-    contactPhone: requirePhoneField(input.contactPhone),
-    supportedServiceIds,
+    legalEntityName: normalizeOptionalTextField(input.legalEntityName),
+    commercialRegistrationNumber: requireTextField(input.commercialRegistrationNumber, "رقم السجل التجاري"),
+    taxRegistrationNumber: requireTextField(input.taxRegistrationNumber, "الرقم الضريبي"),
+    city: requireSaudiCityField(input.city),
+    cityId: requireSaudiCityIdField(input.cityId, input.city),
+    districtId: requireSaudiDistrictIdField(
+      requireSaudiCityIdField(input.cityId, input.city),
+      input.districtId,
+      "حي المنشأة",
+    ),
+    coverageType:
+      input.coverageType === "city_wide" || input.coverageType === "district_based"
+        ? input.coverageType
+        : (() => {
+            throw new Error("يرجى تحديد نطاق التغطية: مدينة كاملة أو أحياء محددة.");
+          })(),
+    coveredDistrictIds:
+      input.coverageType === "district_based"
+        ? (() => {
+            const normalizedDistrictIds = Array.from(
+              new Set(
+                (input.coveredDistrictIds ?? []).map((districtId) =>
+                  requireSaudiDistrictIdField(
+                    requireSaudiCityIdField(input.cityId, input.city),
+                    districtId,
+                    "حي التغطية",
+                  ),
+                ),
+              ),
+            );
+
+            if (normalizedDistrictIds.length === 0) {
+              throw new Error("يرجى اختيار حي تغطية واحد على الأقل عند تحديد التغطية بالأحياء.");
+            }
+
+            return normalizedDistrictIds;
+          })()
+        : [],
+    businessPhone: requirePhoneField(input.businessPhone),
+    businessEmail: requireEmailField(input.businessEmail),
+    addressText: requireTextField(input.addressText, "العنوان التفصيلي"),
+    latitude: requireCoordinateField({
+      value: input.latitude,
+      label: "خط العرض",
+      min: -90,
+      max: 90,
+    }),
+    longitude: requireCoordinateField({
+      value: input.longitude,
+      label: "خط الطول",
+      min: -180,
+      max: 180,
+    }),
+    servicePricing: Array.from(servicePricingMap.entries()).map(([serviceId, proposedPriceSar]) => ({
+      serviceId,
+      proposedPriceSar,
+    })),
     dailyCapacityKg,
-    notesAr: input.notesAr?.trim() || undefined,
+    acceptanceWindowMinutes: requirePositiveNumberField(
+      input.acceptanceWindowMinutes,
+      "نافذة قبول الطلب",
+    ),
+    pickupLeadTimeHours: requirePositiveNumberField(input.pickupLeadTimeHours, "زمن الاستلام"),
+    executionTimeHours: requirePositiveNumberField(input.executionTimeHours, "زمن التنفيذ"),
+    deliveryTimeHours: requirePositiveNumberField(input.deliveryTimeHours, "زمن التسليم"),
+    maxActiveOrders: requirePositiveNumberField(input.maxActiveOrders, "الحد الأقصى للطلبات النشطة"),
+    workingDays: normalizeWorkingDays(input.workingDays),
+    workingHoursFrom: requireTimeField(input.workingHoursFrom, "بداية ساعات العمل"),
+    workingHoursTo: requireTimeField(input.workingHoursTo, "نهاية ساعات العمل"),
+    commercialRegistrationFile,
+    bankName: requireTextField(input.bankName, "اسم البنك"),
+    iban: requireIbanField(input.iban),
+    bankAccountHolderName: requireTextField(input.bankAccountHolderName, "اسم صاحب الحساب"),
+    accountFullName: requireTextField(input.accountFullName, "اسم مسؤول الحساب"),
+    accountPhone: requirePhoneField(input.accountPhone),
+    accountEmail: requireEmailField(input.accountEmail),
+    notesAr: normalizeOptionalTextField(input.notesAr ?? input.notes),
   };
 };
 
-const buildPendingProviderCapabilities = (serviceIds: string[], city: string, dailyCapacityKg: number) => {
-  return serviceIds.map((serviceId) => {
-    const service = findServiceById(serviceId);
+const buildPlatformCatalogAdminData = () => {
+  const productById = buildPlatformProductLookup(platformProducts);
+  const serviceTypeById = buildPlatformServiceTypeLookup(platformServiceTypes);
 
-    return {
-      serviceId: service.id,
-      serviceName: service.name,
-      active: true,
-      unitPriceSar: service.defaultUnitPriceSar,
-      maxDailyKg: dailyCapacityKg,
-      maxSingleOrderKg: Math.max(Math.round(dailyCapacityKg * 0.3), 25),
-      rushSupported: service.supportsRush,
-      supportedCityCodes: [city],
-      defaultTurnaroundHours: service.defaultTurnaroundHours,
-      minimumPickupLeadHours: 2,
-      pickupWindow: {
-        startHour: 8,
-        endHour: 22,
+  return {
+    serviceTypes: clone(platformServiceTypes),
+    products: clone(platformProducts),
+    matrixRows: platformServiceMatrix
+      .map((row) => {
+        const product = productById.get(row.productId);
+        const serviceType = serviceTypeById.get(row.serviceTypeId);
+
+        if (!product || !serviceType) {
+          return undefined;
+        }
+
+        return {
+          ...row,
+          productName: product.name,
+          serviceTypeName: serviceType.name,
+          matrixLabelAr: buildPlatformCatalogMatrixLabel({
+            productName: product.name,
+            serviceTypeName: serviceType.name,
+          }),
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row)),
+  };
+};
+
+const findMatrixRowById = (serviceId: string) => {
+  const matrixRow = platformServiceMatrix.find((currentRow) => currentRow.id === serviceId);
+
+  if (!matrixRow) {
+    throw new Error(`تعذر العثور على الخدمة القياسية ${serviceId}.`);
+  }
+
+  return matrixRow;
+};
+
+const getProviderOfferings = (providerId: string) =>
+  providerServiceOfferings
+    .filter((offering) => offering.providerId === providerId)
+    .sort((left, right) => left.productName.ar.localeCompare(right.productName.ar, "ar"));
+
+const buildProviderCapabilitiesState = (provider: ProviderProfile) =>
+  buildProviderCapabilitiesFromApprovedOfferings({
+    providerId: provider.id,
+    serviceTypes: platformServiceTypes,
+    products: platformProducts,
+    matrixRows: platformServiceMatrix,
+    offerings: getProviderOfferings(provider.id),
+  });
+
+const calculateProviderCurrentActiveOrders = (providerId: string) =>
+  orders.filter(
+    (order) =>
+      order.providerId === providerId &&
+      order.status !== OrderStatus.Completed &&
+      order.status !== OrderStatus.PendingCapacity,
+  ).length;
+
+const syncProviderProfileServiceState = (providerId: string) => {
+  const provider = providerProfiles[providerId];
+
+  if (!provider) {
+    return;
+  }
+
+  const serviceOfferings = getProviderOfferings(providerId);
+
+  providerProfiles = {
+    ...providerProfiles,
+    [providerId]: {
+      ...provider,
+      serviceOfferings: clone(serviceOfferings),
+      capabilities: buildProviderCapabilitiesState({
+        ...provider,
+        serviceOfferings,
+      }),
+      operationalLoad: {
+        ...provider.operationalLoad,
+        currentActiveOrders: calculateProviderCurrentActiveOrders(providerId),
       },
-    };
+      updatedAt: new Date().toISOString(),
+    },
+  };
+};
+
+const syncAllProviderProfileServiceStates = () => {
+  Object.keys(providerProfiles).forEach((providerId) => {
+    syncProviderProfileServiceState(providerId);
   });
 };
 
-const findServiceById = (serviceId: string) => {
-  const service = serviceCatalog.find((currentService) => currentService.id === serviceId);
+const findOperationalServiceById = (serviceId: string) => {
+  const service = buildServiceCatalogState(providerServiceOfferings).find(
+    (currentService) => currentService.id === serviceId,
+  );
 
   if (!service) {
-    throw new Error(`Service ${serviceId} was not found in the preview store.`);
+    throw new Error(`الخدمة ${serviceId} غير متاحة تشغيليًا في كتالوج WashOff الحالي.`);
   }
 
   return service;
@@ -1664,7 +2194,7 @@ const validateCreateHotelOrderInput = (input: CreateHotelOrderInput) => {
   }
 
   for (const serviceId of serviceIds) {
-    const service = findServiceById(serviceId);
+    const service = findOperationalServiceById(serviceId);
 
     if (!service.active) {
       throw new Error(`الخدمة ${service.name.ar} غير متاحة حالياً.`);
@@ -1810,7 +2340,7 @@ const resolveReassignmentCopy = (
 
 const buildOrderItems = (orderId: string, serviceIds: string[], totalItemCount: number): OrderItem[] => {
   return serviceIds.map((serviceId, index) => {
-    const service = findServiceById(serviceId);
+    const service = findOperationalServiceById(serviceId);
 
     return {
       id: `${orderId}-item-${index + 1}-${serviceId}`,
@@ -1824,13 +2354,88 @@ const buildOrderItems = (orderId: string, serviceIds: string[], totalItemCount: 
   });
 };
 
+const validateHotelConsoleOrderInput = (input: CreateHotelOrderInput) => {
+  const roomNumber = input.roomNumber?.trim();
+
+  if (!roomNumber) {
+    throw new Error("يرجى إدخال رقم الغرفة قبل إرسال الطلب.");
+  }
+
+  const pickupAt = normalizePickupAt(input.pickupAt);
+
+  if (new Date(pickupAt).getTime() <= Date.now()) {
+    throw new Error("يجب أن يكون موعد الاستلام في المستقبل.");
+  }
+
+  const normalizedItems = new Map<string, number>();
+
+  (input.items ?? []).forEach((item) => {
+    const serviceId = item.serviceId.trim();
+    const quantity = Number(item.quantity);
+
+    if (serviceId.length === 0 || !Number.isFinite(quantity) || quantity <= 0) {
+      return;
+    }
+
+    const service = findOperationalServiceById(serviceId);
+
+    if (!service.active || service.isAvailable === false || (service.operationalProviderCount ?? 0) <= 0) {
+      throw new Error(`الخدمة ${service.name.ar} غير متاحة حاليًا.`);
+    }
+
+    normalizedItems.set(serviceId, (normalizedItems.get(serviceId) ?? 0) + quantity);
+  });
+
+  if (normalizedItems.size === 0) {
+    throw new Error("أدخل كمية لخدمة واحدة على الأقل قبل إرسال الطلب.");
+  }
+
+  const items = Array.from(normalizedItems.entries()).map(([serviceId, quantity]) => ({
+    serviceId,
+    quantity,
+  }));
+
+  return {
+    roomNumber,
+    items,
+    itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
+    pickupAt,
+    notesAr: (input.notesAr ?? input.notes?.trim()) || undefined,
+    priority: input.priority ?? OrderPriority.Standard,
+  };
+};
+
+const buildItemizedOrderItems = (
+  orderId: string,
+  items: Array<{ serviceId: string; quantity: number }>,
+): OrderItem[] => {
+  return items.map((requestedItem, index) => {
+    const service = findOperationalServiceById(requestedItem.serviceId);
+
+    return {
+      id: `${orderId}-item-${index + 1}-${requestedItem.serviceId}`,
+      serviceId: service.id,
+      serviceName: service.name,
+      quantity: requestedItem.quantity,
+      unit: service.billingUnit,
+      unitPriceSar: service.defaultUnitPriceSar,
+      estimatedLineTotalSar: requestedItem.quantity * service.defaultUnitPriceSar,
+    };
+  });
+};
+
 const buildHotelSnapshot = (hotelId: string) => {
   const hotel = hotelProfiles[hotelId];
 
   return {
     id: hotel.id,
     displayName: hotel.displayName,
+    cityId: hotel.address.cityId,
     city: hotel.address.city,
+    districtId: hotel.address.districtId,
+    district: hotel.address.district,
+    latitude: hotel.address.latitude,
+    longitude: hotel.address.longitude,
   };
 };
 
@@ -1840,7 +2445,12 @@ const buildProviderSnapshot = (providerId: string) => {
   return {
     id: provider.id,
     displayName: provider.displayName,
+    cityId: provider.address.cityId,
     city: provider.address.city,
+    districtId: provider.address.districtId,
+    district: provider.address.district,
+    latitude: provider.address.latitude,
+    longitude: provider.address.longitude,
   };
 };
 
@@ -2215,6 +2825,170 @@ const buildAssignment = (
   };
 };
 
+const buildSlaAwareScoreBreakdown = (totalScore: number): ScoreBreakdown => {
+  const entries = [
+    { criterion: MatchingCriterion.Price, labelAr: "درجة السعر", weight: 0.25, rawScore: totalScore - 4, weightedScore: (totalScore - 4) * 0.25 },
+    { criterion: MatchingCriterion.SlaSpeed, labelAr: "سرعة التنفيذ", weight: 0.2, rawScore: totalScore - 2, weightedScore: (totalScore - 2) * 0.2 },
+    { criterion: MatchingCriterion.SlaComplianceHistory, labelAr: "الالتزام التاريخي بالـ SLA", weight: 0.2, rawScore: totalScore - 1, weightedScore: (totalScore - 1) * 0.2 },
+    { criterion: MatchingCriterion.Rating, labelAr: "تقييم المزود", weight: 0.15, rawScore: totalScore, weightedScore: totalScore * 0.15 },
+    { criterion: MatchingCriterion.GeographicProximity, labelAr: "القرب الجغرافي", weight: 0.1, rawScore: totalScore - 3, weightedScore: (totalScore - 3) * 0.1 },
+    { criterion: MatchingCriterion.ActiveLoad, labelAr: "الحمل التشغيلي", weight: 0.1, rawScore: totalScore - 2, weightedScore: (totalScore - 2) * 0.1 },
+  ];
+
+  return {
+    totalScore: Math.round(entries.reduce((sum, entry) => sum + entry.weightedScore, 0)),
+    entries,
+  };
+};
+
+const buildSlaAwareMatchingLog = (
+  orderId: string,
+  providerId: string,
+  serviceIds: string[],
+  hotelSnapshot: OrderPartySnapshot,
+  decision: MatchingDecision,
+  totalScore: number,
+): MatchingLog => {
+  const provider = providerProfiles[providerId];
+  const matchedServiceIds = serviceIds.filter((serviceId) =>
+    provider.serviceOfferings.some(
+      (offering) => offering.serviceId === serviceId && offering.activeMatrix && offering.availableMatrix,
+    ),
+  );
+  const unsupportedServiceIds = serviceIds.filter((serviceId) => !matchedServiceIds.includes(serviceId));
+  const sameCity = provider.coverage.cityId === hotelSnapshot.cityId;
+  const districtCovered =
+    Boolean(hotelSnapshot.districtId) &&
+    (provider.coverage.coverageType === "city_wide" ||
+      provider.coverage.coveredDistrictIds.includes(hotelSnapshot.districtId!));
+  const approvedPriceAvailable = serviceIds.every((serviceId) =>
+    provider.serviceOfferings.some(
+      (offering) =>
+        offering.serviceId === serviceId &&
+        offering.currentStatus === PlatformServiceCurrentStatus.Active &&
+        typeof offering.currentApprovedPriceSar === "number",
+    ),
+  );
+  const slaCompatible =
+    provider.slaProfile.pickupLeadTimeHours <= 6 && provider.slaProfile.processingHours <= 24;
+  const withinActiveLoadThreshold =
+    provider.operationalLoad.currentActiveOrders <= provider.operationalLoad.maxActiveOrders;
+  const eligible =
+    unsupportedServiceIds.length === 0 &&
+    sameCity &&
+    districtCovered &&
+    approvedPriceAvailable &&
+    slaCompatible &&
+    provider.active &&
+    provider.onboarding.status === OnboardingStatus.Approved &&
+    withinActiveLoadThreshold;
+
+  return {
+    id: `match-${orderId}-${providerId}-sla`,
+    matchingRunId: `run-${orderId}`,
+    orderId,
+    providerId,
+    decision,
+    eligibilityResult: {
+      providerId,
+      orderId,
+      eligible,
+      reasonCodes: eligible
+        ? []
+        : unsupportedServiceIds.length > 0
+          ? [EligibilityReasonCode.ServiceUnsupported]
+          : !sameCity
+            ? [EligibilityReasonCode.CityMismatch]
+            : !districtCovered
+              ? [EligibilityReasonCode.DistrictNotCovered]
+              : !approvedPriceAvailable
+                ? [EligibilityReasonCode.PriceNotApproved]
+                : !slaCompatible
+                  ? [EligibilityReasonCode.SlaIncompatible]
+                  : [EligibilityReasonCode.ProviderOverloaded],
+      blockingReasonsAr: eligible
+        ? []
+        : unsupportedServiceIds.length > 0
+          ? ["الخدمات المطلوبة غير مدعومة بالكامل"]
+          : !sameCity
+            ? ["المزود ليس في نفس مدينة الفندق"]
+            : !districtCovered
+              ? ["حي الفندق خارج نطاق التغطية"]
+              : !approvedPriceAvailable
+                ? ["لا يوجد سعر معتمد ونشط لهذه الخدمة"]
+                : !slaCompatible
+                  ? ["المزود لا يحقق متطلبات الـ SLA المطلوبة"]
+                  : ["المزود تجاوز الحد الأقصى للطلبات النشطة"],
+      capabilityMatch: {
+        providerId,
+        requestedServiceIds: serviceIds,
+        matchedServiceIds,
+        unsupportedServiceIds,
+        sameCity,
+        districtCovered,
+        approvedAndActive: provider.active && provider.onboarding.status === OnboardingStatus.Approved,
+        hasApprovedActivePrice: approvedPriceAvailable,
+        slaCompatible,
+        withinActiveLoadThreshold,
+        activeLoadRatio:
+          provider.operationalLoad.maxActiveOrders > 0
+            ? provider.operationalLoad.currentActiveOrders / provider.operationalLoad.maxActiveOrders
+            : 1,
+        currentActiveOrders: provider.operationalLoad.currentActiveOrders,
+        maxActiveOrders: provider.operationalLoad.maxActiveOrders,
+        isMatch: eligible,
+        reasonsAr: eligible ? ["مطابقة كاملة"] : ["مطابقة جزئية"],
+      },
+      currentActiveOrders: provider.operationalLoad.currentActiveOrders,
+      maxActiveOrders: provider.operationalLoad.maxActiveOrders,
+      activeLoadRatio:
+        provider.operationalLoad.maxActiveOrders > 0
+          ? provider.operationalLoad.currentActiveOrders / provider.operationalLoad.maxActiveOrders
+          : 1,
+      evaluatedAt: buildOffsetDate({ minutes: -5 }),
+    },
+    scoreBreakdown: buildSlaAwareScoreBreakdown(totalScore),
+    evaluatedAt: buildOffsetDate({ minutes: -5 }),
+    notesAr: decision === MatchingDecision.Selected ? "تم اختيار المزود الأعلى تقييمًا" : "لم يتم اختيار المزود في هذه الجولة",
+  };
+};
+
+const buildSlaAwareAssignment = (
+  orderId: string,
+  hotelId: string,
+  providerId: string,
+  serviceIds: string[],
+  hotelSnapshot: OrderPartySnapshot,
+  attemptNumber: number,
+  status: AssignmentStatus,
+  assignedAt: string,
+  responseDueAt?: string,
+): Assignment => {
+  const matchingLog = buildSlaAwareMatchingLog(
+    orderId,
+    providerId,
+    serviceIds,
+    hotelSnapshot,
+    MatchingDecision.Selected,
+    providerProfiles[providerId].performance.qualityScore,
+  );
+
+  return {
+    id: `assignment-${orderId}-${attemptNumber}`,
+    orderId,
+    hotelId,
+    providerId,
+    attemptNumber,
+    status,
+    assignedAt,
+    responseDueAt,
+    respondedAt: status === AssignmentStatus.PendingAcceptance ? undefined : buildOffsetDate({ minutes: -10 }),
+    acceptedAt: status === AssignmentStatus.Accepted ? buildOffsetDate({ hours: -2 }) : undefined,
+    scoreBreakdown: matchingLog.scoreBreakdown,
+    eligibilityResult: matchingLog.eligibilityResult,
+  };
+};
+
 const buildAssignmentHistory = (
   assignment: Assignment,
   toStatus: AssignmentStatus,
@@ -2404,7 +3178,7 @@ const initialOrders: LaundryOrder[] = [
     hotelId: "hotel-2",
     providerId: DEFAULT_PROVIDER_ID,
     status: OrderStatus.Assigned,
-    serviceIds: ["dry_clean"],
+    serviceIds: ["svc-thobe-dry_clean"],
     totalItemCount: 60,
     createdAt: buildOffsetDate({ hours: -1, minutes: -10 }),
     updatedAt: buildOffsetDate({ minutes: -5 }),
@@ -2416,7 +3190,7 @@ const initialOrders: LaundryOrder[] = [
     hotelId: DEFAULT_HOTEL_ID,
     providerId: DEFAULT_PROVIDER_ID,
     status: OrderStatus.Assigned,
-    serviceIds: ["wash_fold", "iron"],
+    serviceIds: ["svc-bedsheet-wash_and_iron", "svc-shirt-iron"],
     totalItemCount: 95,
     createdAt: buildOffsetDate({ hours: -2 }),
     updatedAt: buildOffsetDate({ minutes: -10 }),
@@ -2428,7 +3202,7 @@ const initialOrders: LaundryOrder[] = [
     hotelId: DEFAULT_HOTEL_ID,
     providerId: DEFAULT_PROVIDER_ID,
     status: OrderStatus.Completed,
-    serviceIds: ["wash_fold"],
+    serviceIds: ["svc-bedsheet-wash_and_iron"],
     totalItemCount: 85,
     createdAt: buildOffsetDate({ days: -2, hours: -4 }),
     updatedAt: buildOffsetDate({ days: -1, hours: -2 }),
@@ -2441,7 +3215,7 @@ const initialOrders: LaundryOrder[] = [
     hotelId: DEFAULT_HOTEL_ID,
     providerId: "provider-2",
     status: OrderStatus.InProcessing,
-    serviceIds: ["dry_clean"],
+    serviceIds: ["svc-thobe-dry_clean"],
     totalItemCount: 120,
     createdAt: buildOffsetDate({ days: -1, hours: -6 }),
     updatedAt: buildOffsetDate({ hours: -6 }),
@@ -2453,7 +3227,7 @@ const initialOrders: LaundryOrder[] = [
     hotelId: DEFAULT_HOTEL_ID,
     providerId: DEFAULT_PROVIDER_ID,
     status: OrderStatus.PickedUp,
-    serviceIds: ["wash_fold"],
+    serviceIds: ["svc-bedsheet-wash_and_iron"],
     totalItemCount: 45,
     createdAt: buildOffsetDate({ days: -2, hours: -8 }),
     updatedAt: buildOffsetDate({ hours: -14 }),
@@ -2465,7 +3239,7 @@ const initialOrders: LaundryOrder[] = [
     hotelId: DEFAULT_HOTEL_ID,
     providerId: "provider-3",
     status: OrderStatus.Delivered,
-    serviceIds: ["dry_clean"],
+    serviceIds: ["svc-thobe-dry_clean"],
     totalItemCount: 200,
     createdAt: buildOffsetDate({ days: -4 }),
     updatedAt: buildOffsetDate({ days: -2 }),
@@ -2478,7 +3252,7 @@ const initialOrders: LaundryOrder[] = [
     hotelId: "hotel-3",
     providerId: DEFAULT_PROVIDER_ID,
     status: OrderStatus.InProcessing,
-    serviceIds: ["wash_fold", "iron"],
+    serviceIds: ["svc-bedsheet-wash_and_iron", "svc-shirt-iron"],
     totalItemCount: 140,
     createdAt: buildOffsetDate({ days: -2 }),
     updatedAt: buildOffsetDate({ hours: -5 }),
@@ -2490,7 +3264,7 @@ const initialOrders: LaundryOrder[] = [
     hotelId: "hotel-4",
     providerId: DEFAULT_PROVIDER_ID,
     status: OrderStatus.QualityCheck,
-    serviceIds: ["wash_fold", "iron"],
+    serviceIds: ["svc-bedsheet-wash_and_iron", "svc-shirt-iron"],
     totalItemCount: 80,
     createdAt: buildOffsetDate({ days: -2, hours: -4 }),
     updatedAt: buildOffsetDate({ hours: -3 }),
@@ -2502,7 +3276,7 @@ const initialOrders: LaundryOrder[] = [
     hotelId: "hotel-5",
     providerId: DEFAULT_PROVIDER_ID,
     status: OrderStatus.OutForDelivery,
-    serviceIds: ["wash_fold"],
+    serviceIds: ["svc-bedsheet-wash_and_iron"],
     totalItemCount: 110,
     createdAt: buildOffsetDate({ days: -3 }),
     updatedAt: buildOffsetDate({ hours: -2 }),
@@ -2513,6 +3287,269 @@ const initialOrders: LaundryOrder[] = [
 
 let orders = clone(initialOrders);
 let nextOrderNumber = 1045;
+let hotelInvoices: HotelInvoice[] = [];
+let providerStatements: ProviderSettlementStatement[] = [];
+
+const roundFinancialAmount = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+
+const resolveCompletedAtForOrder = (order: LaundryOrder, fallback = order.statusUpdatedAt) => {
+  const completedEntry = order.statusHistory
+    ?.slice()
+    .reverse()
+    .find((entry) => entry.toStatus === OrderStatus.Completed);
+
+  return completedEntry?.changedAt ?? fallback;
+};
+
+const buildPlatformFinanceSellerSnapshot = () => ({
+  id: "washoff-platform",
+  displayNameAr: platformSettings.siteNameAr || "واش أوف",
+  city: "الرياض",
+  vatNumber: "VAT-PENDING",
+  email: platformSettings.mailFromEmail,
+  phone: platformSettings.supportPhone,
+});
+
+const buildHotelFinanceBuyerSnapshot = (hotelId: string) => {
+  const hotel = hotelProfiles[hotelId];
+
+  return {
+    id: hotel.id,
+    displayNameAr: hotel.displayName.ar,
+    city: hotel.address.city,
+    vatNumber: hotel.compliance.taxRegistrationNumber,
+    email: hotel.contact.email,
+    phone: hotel.contact.phone,
+  };
+};
+
+const buildProviderFinancePartySnapshot = (providerId: string) => {
+  const provider = providerProfiles[providerId];
+
+  return {
+    id: provider.id,
+    displayNameAr: provider.displayName.ar,
+    city: provider.address.city,
+    vatNumber: provider.businessProfile.taxRegistrationNumber,
+    email: provider.businessProfile.email,
+    phone: provider.businessProfile.phone,
+  };
+};
+
+const buildHotelFinancialSnapshotForOrder = (order: LaundryOrder, lockedAt: string) => {
+  const lines: OrderFinancialLineSnapshot[] = order.items.map((item) => {
+    const subtotalExVatSar = roundFinancialAmount(item.unitPriceSar * item.quantity);
+    const breakdown = buildFinancialBreakdown(subtotalExVatSar);
+
+    return {
+      id: `hotel-financial-line-${order.id}-${item.id}`,
+      orderItemId: item.id,
+      serviceId: item.serviceId,
+      serviceNameAr: item.serviceName.ar,
+      quantity: item.quantity,
+      unitPriceExVatSar: item.unitPriceSar,
+      subtotalExVatSar: breakdown.subtotalExVatSar,
+      vatAmountSar: breakdown.vatAmountSar,
+      totalIncVatSar: breakdown.totalIncVatSar,
+    };
+  });
+
+  return buildOrderFinancialSnapshot({
+    pricingSource: "hotel_contract",
+    lockedAt,
+    lines,
+  });
+};
+
+const findApprovedProviderOfferingForOrderItem = (providerId: string, serviceId: string) => {
+  return providerServiceOfferings.find(
+    (offering) =>
+      offering.providerId === providerId &&
+      offering.serviceId === serviceId &&
+      offering.currentStatus === PlatformServiceCurrentStatus.Active &&
+      typeof offering.currentApprovedPriceSar === "number" &&
+      offering.activeMatrix &&
+      offering.availableMatrix,
+  );
+};
+
+const buildProviderFinancialSnapshotForOrder = (order: LaundryOrder, lockedAt: string) => {
+  if (!order.providerId) {
+    throw new Error("لا يمكن إنشاء لقطة مالية للمزوّد قبل تحديد المزوّد المعني بالطلب.");
+  }
+
+  const lines: OrderFinancialLineSnapshot[] = order.items.map((item) => {
+    const offering = findApprovedProviderOfferingForOrderItem(order.providerId!, item.serviceId);
+
+    if (!offering || typeof offering.currentApprovedPriceSar !== "number") {
+      throw new Error("تعذر تثبيت السعر المعتمد للمزوّد لهذا الطلب المكتمل.");
+    }
+
+    const subtotalExVatSar = roundFinancialAmount(offering.currentApprovedPriceSar * item.quantity);
+    const breakdown = buildFinancialBreakdown(subtotalExVatSar);
+
+    return {
+      id: `provider-financial-line-${order.id}-${item.id}`,
+      orderItemId: item.id,
+      serviceId: item.serviceId,
+      serviceNameAr: item.serviceName.ar,
+      quantity: item.quantity,
+      unitPriceExVatSar: offering.currentApprovedPriceSar,
+      subtotalExVatSar: breakdown.subtotalExVatSar,
+      vatAmountSar: breakdown.vatAmountSar,
+      totalIncVatSar: breakdown.totalIncVatSar,
+    };
+  });
+
+  return buildOrderFinancialSnapshot({
+    pricingSource: "provider_approved_offering",
+    lockedAt,
+    lines,
+  });
+};
+
+const ensureHotelInvoiceForCompletedOrder = (order: LaundryOrder, completedAt: string) => {
+  if (!order.hotelFinancialSnapshot) {
+    throw new Error("تعذر بناء الفاتورة اليومية قبل تثبيت لقطة الفندق المالية للطلب.");
+  }
+
+  const invoiceDate = buildDailyFinanceDateKey(completedAt);
+  const line = {
+    id: `hotel-invoice-line-${order.id}`,
+    invoiceId: buildHotelInvoiceId(order.hotelId, invoiceDate),
+    orderId: order.id,
+    roomNumber: order.roomNumber,
+    orderSubtotalExVatSar: order.hotelFinancialSnapshot.subtotalExVatSar,
+    orderVatAmountSar: order.hotelFinancialSnapshot.vatAmountSar,
+    orderTotalIncVatSar: order.hotelFinancialSnapshot.totalIncVatSar,
+  };
+
+  const existingInvoice = hotelInvoices.find((invoice) => invoice.id === line.invoiceId);
+
+  if (existingInvoice) {
+    hotelInvoices = hotelInvoices.map((invoice) =>
+      invoice.id === existingInvoice.id
+        ? appendHotelInvoiceLine(invoice, line, completedAt)
+        : invoice,
+    );
+    return hotelInvoices.find((invoice) => invoice.id === existingInvoice.id)!;
+  }
+
+  const nextInvoice = appendHotelInvoiceLine(
+    {
+      id: line.invoiceId,
+      invoiceNumber: buildHotelInvoiceNumber(order.hotelId, invoiceDate),
+      hotelId: order.hotelId,
+      invoiceDate,
+      currencyCode: "SAR",
+      status: HotelInvoiceStatus.Issued,
+      statusLabelAr: hotelInvoiceStatusLabelsAr[HotelInvoiceStatus.Issued],
+      orderCount: 0,
+      subtotalExVatSar: 0,
+      vatAmountSar: 0,
+      totalIncVatSar: 0,
+      seller: buildPlatformFinanceSellerSnapshot(),
+      buyer: buildHotelFinanceBuyerSnapshot(order.hotelId),
+      createdAt: completedAt,
+      updatedAt: completedAt,
+      issuedAt: completedAt,
+      lines: [],
+    },
+    line,
+    completedAt,
+  );
+
+  hotelInvoices = [...hotelInvoices, nextInvoice].sort((left, right) => right.invoiceDate.localeCompare(left.invoiceDate));
+  return nextInvoice;
+};
+
+const ensureProviderStatementForCompletedOrder = (order: LaundryOrder, completedAt: string) => {
+  if (!order.providerId || !order.providerFinancialSnapshot) {
+    throw new Error("تعذر إنشاء كشف مستحقات المزوّد قبل تثبيت اللقطة المالية الخاصة به.");
+  }
+
+  const statementDate = buildDailyFinanceDateKey(completedAt);
+  const line = {
+    id: `provider-statement-line-${order.id}`,
+    statementId: buildProviderStatementId(order.providerId, statementDate),
+    orderId: order.id,
+    roomNumber: order.roomNumber,
+    providerSubtotalExVatSar: order.providerFinancialSnapshot.subtotalExVatSar,
+    providerVatAmountSar: order.providerFinancialSnapshot.vatAmountSar,
+    providerTotalIncVatSar: order.providerFinancialSnapshot.totalIncVatSar,
+  };
+
+  const existingStatement = providerStatements.find((statement) => statement.id === line.statementId);
+
+  if (existingStatement) {
+    providerStatements = providerStatements.map((statement) =>
+      statement.id === existingStatement.id
+        ? appendProviderStatementLine(statement, line, completedAt)
+        : statement,
+    );
+    return providerStatements.find((statement) => statement.id === existingStatement.id)!;
+  }
+
+  const nextStatement = appendProviderStatementLine(
+    {
+      id: line.statementId,
+      statementNumber: buildProviderStatementNumber(order.providerId, statementDate),
+      providerId: order.providerId,
+      statementDate,
+      currencyCode: "SAR",
+      status: ProviderStatementStatus.PendingPayment,
+      statusLabelAr: providerStatementStatusLabelsAr[ProviderStatementStatus.PendingPayment],
+      orderCount: 0,
+      subtotalExVatSar: 0,
+      vatAmountSar: 0,
+      totalIncVatSar: 0,
+      provider: buildProviderFinancePartySnapshot(order.providerId),
+      createdAt: completedAt,
+      updatedAt: completedAt,
+      lines: [],
+    },
+    line,
+    completedAt,
+  );
+
+  providerStatements = [...providerStatements, nextStatement].sort((left, right) =>
+    right.statementDate.localeCompare(left.statementDate),
+  );
+  return nextStatement;
+};
+
+const finalizeCompletedOrderFinancials = (order: LaundryOrder, completedAt?: string): LaundryOrder => {
+  if (order.status !== OrderStatus.Completed) {
+    return order;
+  }
+
+  const lockedAt = completedAt ?? resolveCompletedAtForOrder(order);
+  const hotelFinancialSnapshot = order.hotelFinancialSnapshot ?? buildHotelFinancialSnapshotForOrder(order, lockedAt);
+  const providerFinancialSnapshot =
+    order.providerFinancialSnapshot ?? buildProviderFinancialSnapshotForOrder(order, lockedAt);
+  const orderWithSnapshots = {
+    ...order,
+    hotelFinancialSnapshot,
+    providerFinancialSnapshot,
+    billedAt: order.billedAt ?? lockedAt,
+  };
+  const hotelInvoice = ensureHotelInvoiceForCompletedOrder(orderWithSnapshots, lockedAt);
+  const providerStatement = ensureProviderStatementForCompletedOrder(orderWithSnapshots, lockedAt);
+
+  return {
+    ...orderWithSnapshots,
+    hotelInvoiceId: hotelInvoice.id,
+    providerStatementId: providerStatement.id,
+  };
+};
+
+function rebuildFinancialDocumentsFromOrders() {
+  hotelInvoices = [];
+  providerStatements = [];
+  orders = orders.map((order) => finalizeCompletedOrderFinancials(order));
+}
+
+rebuildFinancialDocumentsFromOrders();
 
 const processExpiredAssignments = (referenceTime = new Date().toISOString()) => {
   const expiredOrderIds = orders
@@ -3097,6 +4134,7 @@ export async function getProviderProfile(providerId?: string) {
 
 export async function listProviders() {
   processExpiredAssignments();
+  syncAllProviderProfileServiceStates();
   return clone(Object.values(providerProfiles).filter((provider) => isProviderOperationallyApproved(provider)));
 }
 
@@ -3109,8 +4147,318 @@ export async function listProviderRegistrations() {
   );
 }
 
-export async function listServiceCatalog() {
-  return clone(serviceCatalog);
+export async function listServiceCatalog(_hotelId?: string) {
+  return clone(buildServiceCatalogState(providerServiceOfferings));
+}
+
+export async function getPlatformServiceCatalogAdminData() {
+  return clone(buildPlatformCatalogAdminData());
+}
+
+export async function upsertPlatformProduct(command: { id?: string; nameAr: string; active: boolean }) {
+  const timestamp = new Date().toISOString();
+  const normalizedName = requireTextField(command.nameAr, "اسم المنتج");
+
+  if (command.id) {
+    const existingProduct = platformProducts.find((product) => product.id === command.id);
+
+    if (!existingProduct) {
+      throw new Error("تعذر العثور على المنتج المطلوب في كتالوج المنصة.");
+    }
+
+    platformProducts = platformProducts.map((product) =>
+      product.id === command.id
+        ? {
+            ...product,
+            name: { ...product.name, ar: normalizedName },
+            active: command.active,
+            updatedAt: timestamp,
+          }
+        : product,
+    );
+  } else {
+    const nextSortOrder = platformProducts.reduce(
+      (currentMax, product) => Math.max(currentMax, product.sortOrder),
+      0,
+    ) + 1;
+    const productCode = `custom_product_${nextSortOrder}`;
+    const productId = `product-${productCode}`;
+    const nextProduct: PlatformProduct = {
+      id: productId,
+      code: productCode,
+      name: { ar: normalizedName },
+      active: command.active,
+      sortOrder: nextSortOrder,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    const nextMatrixSortOrder =
+      platformServiceMatrix.reduce((currentMax, row) => Math.max(currentMax, row.sortOrder), 0) + 1;
+    const nextRows = platformServiceTypes.map((serviceType, index) => ({
+      id: `svc-${productCode}-${serviceType.code}`,
+      code: `svc_${productCode}_${serviceType.code}`,
+      productId,
+      serviceTypeId: serviceType.id,
+      pricingUnit: ServicePricingUnit.Piece,
+      suggestedPriceSar: undefined,
+      isAvailable: false,
+      active: false,
+      sortOrder: nextMatrixSortOrder + index,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }));
+
+    platformProducts = [...platformProducts, nextProduct];
+    platformServiceMatrix = [...platformServiceMatrix, ...nextRows];
+  }
+
+  return clone(platformProducts.at(-1) ?? platformProducts[0]);
+}
+
+export async function updatePlatformServiceMatrix(command: {
+  matrixRowId: string;
+  active?: boolean;
+  isAvailable?: boolean;
+  suggestedPriceSar?: number;
+}) {
+  const timestamp = new Date().toISOString();
+  const existingRow = findMatrixRowById(command.matrixRowId);
+
+  const nextSuggestedPrice =
+    command.suggestedPriceSar === undefined
+      ? existingRow.suggestedPriceSar
+      : requirePositiveNumberField(command.suggestedPriceSar, "السعر الاسترشادي");
+  const nextIsAvailable = command.isAvailable ?? existingRow.isAvailable;
+  const nextActive = command.active ?? existingRow.active;
+
+  platformServiceMatrix = platformServiceMatrix.map((row) =>
+    row.id === command.matrixRowId
+      ? {
+          ...row,
+          active: nextActive,
+          isAvailable: nextIsAvailable,
+          suggestedPriceSar: nextIsAvailable ? nextSuggestedPrice : undefined,
+          updatedAt: timestamp,
+        }
+      : row,
+  );
+
+  providerServiceOfferings = providerServiceOfferings.map((offering) =>
+    offering.serviceId === command.matrixRowId
+      ? {
+          ...offering,
+          activeMatrix: nextActive,
+          availableMatrix: nextIsAvailable,
+          suggestedPriceSar: nextIsAvailable ? nextSuggestedPrice : undefined,
+          updatedAt: timestamp,
+        }
+      : offering,
+  );
+  syncAllProviderProfileServiceStates();
+
+  return clone(
+    buildPlatformCatalogAdminData().matrixRows.find((row) => row.id === command.matrixRowId)!,
+  );
+}
+
+export async function getProviderServiceManagement(providerId?: string) {
+  const authorizedProvider = providerId
+    ? providerProfiles[providerId]
+    : ensureProviderOperationalAccess(undefined);
+
+  if (!authorizedProvider) {
+    throw new Error("تعذر العثور على المزوّد المطلوب.");
+  }
+
+  return clone({
+    catalog: buildPlatformCatalogAdminData(),
+    offerings: getProviderOfferings(authorizedProvider.id),
+  });
+}
+
+export async function submitProviderServicePricing(command: {
+  providerId?: string;
+  offerings: ProviderServicePricingInput[];
+}) {
+  const provider = command.providerId ? providerProfiles[command.providerId] : ensureProviderOperationalAccess();
+
+  if (!provider) {
+    throw new Error("تعذر العثور على ملف المزوّد المطلوب.");
+  }
+
+  const validatedInput = validateProviderRegistrationInput({
+    providerName: provider.displayName.ar,
+    legalEntityName: provider.businessProfile.legalEntityName,
+    commercialRegistrationNumber: provider.businessProfile.commercialRegistrationNumber,
+    taxRegistrationNumber: provider.businessProfile.taxRegistrationNumber,
+    city: provider.address.city as ProviderRegistrationInput["city"],
+    businessPhone: provider.businessProfile.phone,
+    businessEmail: provider.businessProfile.email,
+    addressText: provider.locationProfile.addressText,
+    latitude: provider.address.latitude ?? 0,
+    longitude: provider.address.longitude ?? 0,
+    servicePricing: command.offerings,
+    dailyCapacityKg: provider.currentCapacity.totalKg,
+    pickupLeadTimeHours: provider.operatingProfile.pickupLeadTimeHours,
+    executionTimeHours: provider.operatingProfile.executionTimeHours,
+    deliveryTimeHours: provider.operatingProfile.deliveryTimeHours,
+    workingDays: provider.operatingProfile.workingDays,
+    workingHoursFrom: provider.operatingProfile.workingHoursFrom,
+    workingHoursTo: provider.operatingProfile.workingHoursTo,
+    commercialRegistrationFile: {
+      fileName: provider.businessProfile.commercialRegistrationFile.fileName,
+      mimeType: provider.businessProfile.commercialRegistrationFile.mimeType,
+      sizeBytes: provider.businessProfile.commercialRegistrationFile.sizeBytes,
+      contentBase64: "preview",
+    },
+    bankName: provider.financialProfile.bankName,
+    iban: provider.financialProfile.iban,
+    bankAccountHolderName: provider.financialProfile.accountHolderName,
+    accountFullName: provider.accountSetupProfile.fullName,
+    accountPhone: provider.accountSetupProfile.phone,
+    accountEmail: provider.accountSetupProfile.email,
+  });
+  const timestamp = new Date().toISOString();
+  const additions = buildProviderOfferingsFromPricingInput({
+    providerId: provider.id,
+    pricingInput: validatedInput.servicePricing,
+    timestamp,
+  });
+  const existingByServiceId = new Map(
+    getProviderOfferings(provider.id).map((offering) => [offering.serviceId, offering]),
+  );
+  const additionsByServiceId = new Map(additions.map((offering) => [offering.serviceId, offering]));
+
+  providerServiceOfferings = providerServiceOfferings
+    .map((offering) => {
+      if (offering.providerId !== provider.id) {
+        return offering;
+      }
+
+      const nextOffering = additionsByServiceId.get(offering.serviceId);
+
+      if (!nextOffering) {
+        return offering;
+      }
+
+      return {
+        ...offering,
+        proposedPriceSar: nextOffering.proposedPriceSar,
+        proposedStatus: ProviderServiceProposalStatus.PendingApproval,
+        proposedStatusLabelAr: "بانتظار الاعتماد",
+        proposedSubmittedAt: timestamp,
+        rejectionReasonAr: undefined,
+        activeMatrix: nextOffering.activeMatrix,
+        availableMatrix: nextOffering.availableMatrix,
+        suggestedPriceSar: nextOffering.suggestedPriceSar,
+        updatedAt: timestamp,
+      };
+    })
+    .concat(additions.filter((offering) => !existingByServiceId.has(offering.serviceId)));
+
+  syncProviderProfileServiceState(provider.id);
+
+  return clone({
+    catalog: buildPlatformCatalogAdminData(),
+    offerings: getProviderOfferings(provider.id),
+  });
+}
+
+export async function getProviderPricingAdminData() {
+  const providersById = providerProfiles;
+
+  return clone({
+    pendingReviews: providerServiceOfferings
+      .filter(
+        (offering) =>
+          offering.proposedStatus === ProviderServiceProposalStatus.PendingApproval &&
+          typeof offering.proposedPriceSar === "number",
+      )
+      .map((offering) => {
+        const provider = providersById[offering.providerId];
+
+        return {
+          offeringId: offering.id,
+          providerId: offering.providerId,
+          providerNameAr: provider?.displayName.ar ?? offering.providerId,
+          productId: offering.productId,
+          productNameAr: offering.productName.ar,
+          serviceType: offering.serviceType,
+          serviceTypeLabelAr: offering.serviceTypeName.ar,
+          pricingUnitLabelAr: offering.pricingUnit === ServicePricingUnit.Piece ? "للقطعة" : "للقطعة",
+          suggestedPriceSar: offering.suggestedPriceSar,
+          currentApprovedPriceSar: offering.currentApprovedPriceSar,
+          proposedPriceSar: offering.proposedPriceSar!,
+          proposedSubmittedAt: offering.proposedSubmittedAt ?? offering.updatedAt,
+          activeApprovedAt: offering.approvedAt,
+          activeStatusLabelAr: offering.currentStatusLabelAr,
+          proposedStatusLabelAr: offering.proposedStatusLabelAr ?? "بانتظار الاعتماد",
+          rejectionReasonAr: offering.rejectionReasonAr,
+        };
+      })
+      .sort((left, right) => right.proposedSubmittedAt.localeCompare(left.proposedSubmittedAt)),
+  });
+}
+
+export async function approveProviderServicePricing(offeringId: string) {
+  const timestamp = new Date().toISOString();
+  const existingOffering = providerServiceOfferings.find((offering) => offering.id === offeringId);
+
+  if (!existingOffering || existingOffering.proposedStatus !== ProviderServiceProposalStatus.PendingApproval) {
+    throw new Error("لا يوجد طلب تسعير معلق للاعتماد لهذا العرض.");
+  }
+
+  providerServiceOfferings = providerServiceOfferings.map((offering) =>
+    offering.id === offeringId
+      ? {
+          ...offering,
+          currentApprovedPriceSar: offering.proposedPriceSar,
+          currentStatus: PlatformServiceCurrentStatus.Active,
+          currentStatusLabelAr: "نشط",
+          proposedPriceSar: undefined,
+          proposedStatus: undefined,
+          proposedStatusLabelAr: undefined,
+          proposedSubmittedAt: undefined,
+          approvedAt: timestamp,
+          approvedByAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
+          approvedByRole: AccountRole.Admin,
+          rejectionReasonAr: undefined,
+          updatedAt: timestamp,
+        }
+      : offering,
+  );
+  syncProviderProfileServiceState(existingOffering.providerId);
+
+  return clone(providerServiceOfferings.find((offering) => offering.id === offeringId)!);
+}
+
+export async function rejectProviderServicePricing(command: {
+  offeringId: string;
+  rejectionReasonAr?: string;
+}) {
+  const timestamp = new Date().toISOString();
+  const existingOffering = providerServiceOfferings.find(
+    (offering) => offering.id === command.offeringId,
+  );
+
+  if (!existingOffering || existingOffering.proposedStatus !== ProviderServiceProposalStatus.PendingApproval) {
+    throw new Error("لا يوجد طلب تسعير معلق يمكن رفضه.");
+  }
+
+  providerServiceOfferings = providerServiceOfferings.map((offering) =>
+    offering.id === command.offeringId
+      ? {
+          ...offering,
+          proposedStatus: ProviderServiceProposalStatus.Rejected,
+          proposedStatusLabelAr: "مرفوض",
+          rejectionReasonAr: normalizeOptionalTextField(command.rejectionReasonAr),
+          updatedAt: timestamp,
+        }
+      : offering,
+  );
+  syncProviderProfileServiceState(existingOffering.providerId);
+
+  return clone(providerServiceOfferings.find((offering) => offering.id === command.offeringId)!);
 }
 
 export async function registerHotel(input: HotelRegistrationInput) {
@@ -3135,7 +4483,10 @@ export async function registerHotel(input: HotelRegistrationInput) {
     roomCount: Math.round(validatedInput.roomCount),
     address: {
       countryCode: "SA",
+      cityId: validatedInput.cityId,
       city: validatedInput.city,
+      districtId: validatedInput.districtId,
+      district: getSaudiDistrictById(validatedInput.districtId)?.nameAr,
       line1: validatedInput.addressText,
       latitude: validatedInput.latitude,
       longitude: validatedInput.longitude,
@@ -3176,6 +4527,7 @@ export async function registerHotel(input: HotelRegistrationInput) {
         : undefined,
       delegationStatus: validatedInput.delegationLetterFile ? "pending_review" : "not_provided",
     },
+    slaProfile: buildHotelSlaProfile(hotelId, validatedInput.serviceLevel),
     contractedServiceIds: [],
     active: false,
     notesAr: validatedInput.notesAr,
@@ -3223,10 +4575,15 @@ export async function registerProvider(input: ProviderRegistrationInput) {
   const submittedAt = new Date().toISOString();
   const nextNumber = selectNextEntityNumber(Object.keys(providerProfiles), "provider");
   const providerId = `provider-${nextNumber}`;
+  const serviceOfferings = buildProviderOfferingsFromPricingInput({
+    providerId,
+    pricingInput: validatedInput.servicePricing,
+    timestamp: submittedAt,
+  });
   const account = createPendingLinkedAccount({
-    fullName: validatedInput.contactPersonName,
-    email: ensureUniqueAccountEmail(validatedInput.contactEmail),
-    phone: validatedInput.contactPhone,
+    fullName: validatedInput.accountFullName,
+    email: ensureUniqueAccountEmail(validatedInput.accountEmail),
+    phone: validatedInput.accountPhone,
     role: AccountRole.Provider,
     linkedProviderId: providerId,
     createdAt: submittedAt,
@@ -3234,24 +4591,82 @@ export async function registerProvider(input: ProviderRegistrationInput) {
   const provider: ProviderProfile = {
     id: providerId,
     code: `PRV-REG-${String(nextNumber).padStart(3, "0")}`,
-    legalName: buildLocalizedText(validatedInput.providerName),
+    legalName: buildLocalizedText(validatedInput.legalEntityName ?? validatedInput.providerName),
     displayName: buildLocalizedText(validatedInput.providerName),
     address: {
       countryCode: "SA",
+      cityId: validatedInput.cityId,
       city: validatedInput.city,
+      districtId: validatedInput.districtId,
+      district: getSaudiDistrictById(validatedInput.districtId)?.nameAr,
+      line1: validatedInput.addressText,
+      latitude: validatedInput.latitude,
+      longitude: validatedInput.longitude,
     },
     timezone: "Asia/Riyadh",
     contact: {
-      name: validatedInput.contactPersonName,
-      email: validatedInput.contactEmail,
-      phone: validatedInput.contactPhone,
+      name: validatedInput.accountFullName,
+      email: validatedInput.accountEmail,
+      phone: validatedInput.accountPhone,
     },
     serviceAreaCities: [validatedInput.city],
-    capabilities: buildPendingProviderCapabilities(
-      validatedInput.supportedServiceIds,
-      validatedInput.city,
-      validatedInput.dailyCapacityKg,
-    ),
+    businessProfile: {
+      legalEntityName: validatedInput.legalEntityName,
+      commercialRegistrationNumber: validatedInput.commercialRegistrationNumber,
+      taxRegistrationNumber: validatedInput.taxRegistrationNumber,
+      phone: validatedInput.businessPhone,
+      email: validatedInput.businessEmail,
+      commercialRegistrationFile: {
+        kind: "commercial_registration",
+        fileName: validatedInput.commercialRegistrationFile.fileName,
+        mimeType: validatedInput.commercialRegistrationFile.mimeType,
+        sizeBytes: validatedInput.commercialRegistrationFile.sizeBytes,
+        uploadedAt: submittedAt,
+        storageKey: `preview://providers/${providerId}/commercial_registration`,
+        downloadPath: buildProviderDocumentDownloadPath(providerId),
+      },
+    },
+    locationProfile: {
+      addressText: validatedInput.addressText,
+    },
+    coverage: {
+      cityId: validatedInput.cityId,
+      coverageType: validatedInput.coverageType,
+      coveredDistrictIds: validatedInput.coveredDistrictIds,
+    },
+    operatingProfile: {
+      acceptanceWindowMinutes: validatedInput.acceptanceWindowMinutes,
+      pickupLeadTimeHours: validatedInput.pickupLeadTimeHours,
+      executionTimeHours: validatedInput.executionTimeHours,
+      deliveryTimeHours: validatedInput.deliveryTimeHours,
+      workingDays: validatedInput.workingDays,
+      workingHoursFrom: validatedInput.workingHoursFrom,
+      workingHoursTo: validatedInput.workingHoursTo,
+    },
+    operationalLoad: {
+      currentActiveOrders: 0,
+      maxActiveOrders: Math.round(validatedInput.maxActiveOrders),
+    },
+    slaProfile: buildDefaultProviderSlaProfile(providerId, {
+      acceptanceWindowMinutes: validatedInput.acceptanceWindowMinutes,
+      pickupLeadTimeHours: validatedInput.pickupLeadTimeHours,
+      processingHours: validatedInput.executionTimeHours,
+      deliveryWindowHours: validatedInput.deliveryTimeHours,
+      minComplianceRate: 0.9,
+      maxDelayToleranceMinutes: 30,
+    }),
+    financialProfile: {
+      bankName: validatedInput.bankName,
+      iban: validatedInput.iban,
+      accountHolderName: validatedInput.bankAccountHolderName,
+    },
+    accountSetupProfile: {
+      fullName: validatedInput.accountFullName,
+      phone: validatedInput.accountPhone,
+      email: validatedInput.accountEmail,
+    },
+    serviceOfferings,
+    capabilities: [],
     currentCapacity: {
       providerId,
       date: submittedAt.slice(0, 10),
@@ -3275,6 +4690,13 @@ export async function registerProvider(input: ProviderRegistrationInput) {
       reassignmentRate: 0,
       completedOrders: 0,
       cancelledOrders: 0,
+      slaCompliance: buildProviderSlaComplianceStats({
+        totalTrackedOrders: 0,
+        onTimePickups: 0,
+        onTimeCompletions: 0,
+        averageDelayMinutes: 0,
+        updatedAt: submittedAt,
+      }),
       lastEvaluatedAt: submittedAt,
     },
     active: false,
@@ -3288,6 +4710,8 @@ export async function registerProvider(input: ProviderRegistrationInput) {
     ...providerProfiles,
     [providerId]: provider,
   };
+  providerServiceOfferings = [...providerServiceOfferings, ...serviceOfferings];
+  syncProviderProfileServiceState(providerId);
   accounts = {
     ...accounts,
     [account.id]: account,
@@ -3304,7 +4728,7 @@ export async function registerProvider(input: ProviderRegistrationInput) {
   });
 
   return clone({
-    provider,
+    provider: providerProfiles[providerId],
     account: {
       accountId: account.id,
       email: account.email,
@@ -3492,7 +4916,7 @@ export async function runAssignmentExpirySweep(referenceTime = new Date().toISOS
 }
 
 export async function expirePendingAssignment(orderId: string, referenceTime = new Date().toISOString()) {
-  return updateOrder(orderId, (order) => {
+  const completedOrder = updateOrder(orderId, (order) => {
     if (
       order.status !== OrderStatus.Assigned ||
       !order.activeAssignment ||
@@ -3509,6 +4933,8 @@ export async function expirePendingAssignment(orderId: string, referenceTime = n
       actorRole: "system",
     });
   });
+
+  return clone(completedOrder);
 }
 
 export async function listAllOrders() {
@@ -3560,18 +4986,121 @@ export async function listProviderActiveOrders(providerId?: string) {
   );
 }
 
+export async function getHotelBillingData(hotelId?: string) {
+  processExpiredAssignments();
+  const authorizedHotel = ensureHotelOperationalAccess(hotelId);
+  const invoices = hotelInvoices
+    .filter((invoice) => invoice.hotelId === authorizedHotel.id)
+    .sort((left, right) => right.invoiceDate.localeCompare(left.invoiceDate));
+
+  return clone({
+    hotelName: authorizedHotel.displayName.ar,
+    invoices,
+    summary: {
+      issuedInvoicesCount: invoices.filter((invoice) => invoice.status === HotelInvoiceStatus.Issued).length,
+      collectedInvoicesCount: invoices.filter((invoice) => invoice.status === HotelInvoiceStatus.Collected).length,
+      outstandingTotalIncVatSar: roundFinancialAmount(
+        invoices
+          .filter((invoice) => invoice.status === HotelInvoiceStatus.Issued)
+          .reduce((sum, invoice) => sum + invoice.totalIncVatSar, 0),
+      ),
+      totalInvoicedIncVatSar: roundFinancialAmount(
+        invoices.reduce((sum, invoice) => sum + invoice.totalIncVatSar, 0),
+      ),
+    },
+  });
+}
+
+export async function getProviderFinanceData(providerId?: string) {
+  processExpiredAssignments();
+  const authorizedProvider = ensureProviderOperationalAccess(providerId);
+  const statements = providerStatements
+    .filter((statement) => statement.providerId === authorizedProvider.id)
+    .sort((left, right) => right.statementDate.localeCompare(left.statementDate));
+
+  return clone({
+    providerName: authorizedProvider.displayName.ar,
+    statements,
+    summary: {
+      pendingStatementsCount: statements.filter(
+        (statement) => statement.status === ProviderStatementStatus.PendingPayment,
+      ).length,
+      paidStatementsCount: statements.filter((statement) => statement.status === ProviderStatementStatus.Paid).length,
+      pendingTotalIncVatSar: roundFinancialAmount(
+        statements
+          .filter((statement) => statement.status === ProviderStatementStatus.PendingPayment)
+          .reduce((sum, statement) => sum + statement.totalIncVatSar, 0),
+      ),
+      totalEarnedIncVatSar: roundFinancialAmount(
+        statements.reduce((sum, statement) => sum + statement.totalIncVatSar, 0),
+      ),
+    },
+  });
+}
+
+export async function getAdminFinanceData() {
+  processExpiredAssignments();
+  const todayKey = buildDailyFinanceDateKey(new Date().toISOString());
+  const todayHotelInvoices = hotelInvoices.filter((invoice) => invoice.invoiceDate === todayKey);
+  const todayProviderStatements = providerStatements.filter((statement) => statement.statementDate === todayKey);
+  const todayHotelSubtotalExVat = todayHotelInvoices.reduce((sum, invoice) => sum + invoice.subtotalExVatSar, 0);
+  const todayProviderSubtotalExVat = todayProviderStatements.reduce(
+    (sum, statement) => sum + statement.subtotalExVatSar,
+    0,
+  );
+  const outputVatTotalSar = roundFinancialAmount(
+    todayHotelInvoices.reduce((sum, invoice) => sum + invoice.vatAmountSar, 0),
+  );
+  const inputVatTotalSar = roundFinancialAmount(
+    todayProviderStatements.reduce((sum, statement) => sum + statement.vatAmountSar, 0),
+  );
+
+  return clone({
+    summary: {
+      todayHotelInvoiceTotalIncVatSar: roundFinancialAmount(
+        todayHotelInvoices.reduce((sum, invoice) => sum + invoice.totalIncVatSar, 0),
+      ),
+      todayProviderStatementTotalIncVatSar: roundFinancialAmount(
+        todayProviderStatements.reduce((sum, statement) => sum + statement.totalIncVatSar, 0),
+      ),
+      grossMarginExVatSar: roundFinancialAmount(todayHotelSubtotalExVat - todayProviderSubtotalExVat),
+      outputVatTotalSar,
+      inputVatTotalSar,
+      netVatPositionSar: roundFinancialAmount(outputVatTotalSar - inputVatTotalSar),
+    },
+    hotelInvoices: hotelInvoices
+      .slice()
+      .sort((left, right) => right.invoiceDate.localeCompare(left.invoiceDate)),
+    providerStatements: providerStatements
+      .slice()
+      .sort((left, right) => right.statementDate.localeCompare(left.statementDate)),
+  });
+}
+
 export async function createHotelOrder(input: CreateHotelOrderInput) {
   processExpiredAssignments();
+  syncAllProviderProfileServiceStates();
   const hotel = ensureHotelOperationalAccess(input.hotelId);
-  const validatedInput = validateCreateHotelOrderInput(input);
+  const validatedInput = validateHotelConsoleOrderInput(input);
   const orderId = `ORD-${nextOrderNumber}`;
-  const items = buildOrderItems(orderId, validatedInput.serviceIds, validatedInput.itemCount);
+  const items = buildItemizedOrderItems(orderId, validatedInput.items);
   const estimatedSubtotalSar = items.reduce((sum, item) => sum + item.estimatedLineTotalSar, 0);
   const timestamp = new Date().toISOString();
+  const requiredSla = buildOrderRequiredSlaSnapshot(hotel.id, hotel.slaProfile);
+  const pickupTargetAt = validatedInput.pickupAt;
+  const deliveryTargetAt = buildFutureDate(
+    validatedInput.pickupAt,
+    hotel.slaProfile.turnaroundTargetHours * 60,
+  );
+  const completionTargetAt = buildFutureDate(
+    deliveryTargetAt,
+    (hotel.slaProfile.deliveryTargetHours ?? 0) * 60,
+  );
   const submittedOrder: LaundryOrder = {
     id: orderId,
     hotelId: hotel.id,
     hotelSnapshot: buildHotelSnapshot(hotel.id),
+    roomNumber: validatedInput.roomNumber,
     assignmentMode: OrderAssignmentMode.Auto,
     status: OrderStatus.Submitted,
     priority: validatedInput.priority,
@@ -3596,7 +5125,11 @@ export async function createHotelOrder(input: CreateHotelOrderInput) {
     ],
     matchingLogs: [],
     slaWindow: {
-      pickupTargetAt: validatedInput.pickupAt,
+      pickupTargetAt,
+      deliveryTargetAt,
+      completionTargetAt,
+      requiredSla,
+      summary: createEmptySlaSummary(),
     },
     slaHistory: [],
     reassignmentEvents: [],
@@ -3691,6 +5224,11 @@ export async function createHotelOrder(input: CreateHotelOrderInput) {
       slaWindow: {
         ...nextOrder.slaWindow,
         responseDueAt,
+        providerSla: buildOrderProviderSlaSnapshot(
+          bestProviderId,
+          providerProfiles[bestProviderId].slaProfile,
+          matchingResult.evaluatedAt,
+        ),
       },
       statusHistory: appendOrderStatusHistory({
         order: nextOrder,
@@ -3716,6 +5254,10 @@ export async function createHotelOrder(input: CreateHotelOrderInput) {
 
   nextOrderNumber += 1;
   orders = [nextOrder, ...orders];
+
+  if (nextOrder.providerId) {
+    syncProviderProfileServiceState(nextOrder.providerId);
+  }
 
   return clone(nextOrder);
 }
@@ -3873,7 +5415,7 @@ export async function confirmHotelOrderCompletion({
   processExpiredAssignments();
   const authorizedHotel = ensureHotelOperationalAccess(hotelId);
 
-  return updateOrder(orderId, (order) => {
+  const completedOrder = updateOrder(orderId, (order) => {
     if (order.hotelId !== authorizedHotel.id) {
       throw new Error("لا يمكن لهذا الفندق تأكيد اكتمال طلب لا يخصه.");
     }
@@ -3919,6 +5461,83 @@ export async function confirmHotelOrderCompletion({
       }),
     };
   });
+
+  const financiallyRecordedOrder = finalizeCompletedOrderFinancials(completedOrder, completedOrder.statusUpdatedAt);
+  orders = orders.map((order) => (order.id === financiallyRecordedOrder.id ? financiallyRecordedOrder : order));
+  return clone(financiallyRecordedOrder);
+}
+
+export async function markHotelInvoiceCollected({
+  invoiceId,
+  actorAccountId = DEFAULT_ADMIN_ACCOUNT_ID,
+}: {
+  invoiceId: string;
+  actorAccountId?: string;
+}) {
+  const timestamp = new Date().toISOString();
+  const existingInvoice = hotelInvoices.find((invoice) => invoice.id === invoiceId);
+
+  if (!existingInvoice) {
+    throw new Error("تعذر العثور على الفاتورة المطلوبة.");
+  }
+
+  hotelInvoices = hotelInvoices.map((invoice) =>
+    invoice.id === invoiceId
+      ? {
+          ...invoice,
+          status: HotelInvoiceStatus.Collected,
+          statusLabelAr: hotelInvoiceStatusLabelsAr[HotelInvoiceStatus.Collected],
+          collectedAt: timestamp,
+          collectedByAccountId: actorAccountId,
+          collectedByRole: "admin",
+          updatedAt: timestamp,
+        }
+      : invoice,
+  );
+
+  return clone(hotelInvoices.find((invoice) => invoice.id === invoiceId)!);
+}
+
+export async function markProviderStatementPaid({
+  statementId,
+  actorAccountId = DEFAULT_ADMIN_ACCOUNT_ID,
+}: {
+  statementId: string;
+  actorAccountId?: string;
+}) {
+  const timestamp = new Date().toISOString();
+  const existingStatement = providerStatements.find((statement) => statement.id === statementId);
+
+  if (!existingStatement) {
+    throw new Error("تعذر العثور على كشف المستحقات المطلوب.");
+  }
+
+  providerStatements = providerStatements.map((statement) =>
+    statement.id === statementId
+      ? {
+          ...statement,
+          status: ProviderStatementStatus.Paid,
+          statusLabelAr: providerStatementStatusLabelsAr[ProviderStatementStatus.Paid],
+          paidAt: timestamp,
+          paidByAccountId: actorAccountId,
+          paidByRole: "admin",
+          updatedAt: timestamp,
+        }
+      : statement,
+  );
+
+  const paidStatement = providerStatements.find((statement) => statement.id === statementId)!;
+  const paidOrderIds = new Set(paidStatement.lines.map((line) => line.orderId));
+  orders = orders.map((order) =>
+    paidOrderIds.has(order.id)
+      ? {
+          ...order,
+          settledAt: timestamp,
+        }
+      : order,
+  );
+
+  return clone(paidStatement);
 }
 
 export async function rejectIncomingOrder(orderId: string, providerId?: string) {
@@ -4125,9 +5744,12 @@ export async function exportMockOrdersRepositoryPersistenceSnapshot() {
     platformContentEntries,
     platformContentAudit,
     hotels: Object.values(hotelProfiles),
+    platformProducts,
     providers: Object.values(providerProfiles),
-    services: serviceCatalog,
+    services: buildPlatformMatrixServiceState(),
     orders,
+    hotelInvoices,
+    providerStatements,
   });
 }
 
@@ -4157,7 +5779,40 @@ export function hydrateMockOrdersRepositoryFromPersistenceSnapshot(
       : initialPlatformContentEntries,
   );
   platformContentAudit = clone(restored.platformContentAudit);
-  serviceCatalog = clone(restored.services);
+  platformServiceTypes = clone(initialPlatformServiceTypes);
+  platformProducts = clone(
+    restored.platformProducts.length > 0 ? restored.platformProducts : initialPlatformProducts,
+  );
+  platformServiceMatrix = clone(
+    restored.services
+      .filter(
+        (service): service is typeof service & {
+          productId: string;
+          serviceType: NonNullable<typeof service.serviceType>;
+          pricingUnit: NonNullable<typeof service.pricingUnit>;
+          sortOrder?: number;
+          createdAt?: string;
+          updatedAt?: string;
+        } =>
+          Boolean(service.productId && service.serviceType && service.pricingUnit),
+      )
+      .map((service) => ({
+        id: service.id,
+        code: service.code,
+        productId: service.productId,
+        serviceTypeId: service.serviceType,
+        pricingUnit: service.pricingUnit,
+        suggestedPriceSar: service.suggestedPriceSar,
+        isAvailable: service.isAvailable ?? true,
+        active: service.active,
+        sortOrder: service.sortOrder ?? 0,
+        createdAt: service.createdAt,
+        updatedAt: service.updatedAt,
+      })),
+  );
+  if (platformServiceMatrix.length === 0) {
+    platformServiceMatrix = clone(initialPlatformServiceMatrix);
+  }
   hotelProfiles = clone(
     restored.hotels.reduce<Record<string, HotelProfile>>((collection, hotel) => {
       collection[hotel.id] = hotel;
@@ -4170,16 +5825,28 @@ export function hydrateMockOrdersRepositoryFromPersistenceSnapshot(
       return collection;
     }, {}),
   );
+  providerServiceOfferings = clone(
+    restored.providers.flatMap((provider) => provider.serviceOfferings ?? []),
+  );
+  syncAllProviderProfileServiceStates();
   orders = clone(restored.orders);
+  hotelInvoices = clone(restored.hotelInvoices ?? []);
+  providerStatements = clone(restored.providerStatements ?? []);
+  if (hotelInvoices.length === 0 && providerStatements.length === 0) {
+    rebuildFinancialDocumentsFromOrders();
+  }
   nextOrderNumber = resolveNextOrderNumber(restored.orders);
   ensurePlatformSettingsState();
   ensurePlatformContentState();
 }
 
 export function resetMockOrdersRepository() {
-  serviceCatalog = clone(initialServiceCatalog);
+  platformServiceTypes = clone(initialPlatformServiceTypes);
+  platformProducts = clone(initialPlatformProducts);
+  platformServiceMatrix = clone(initialPlatformServiceMatrix);
   hotelProfiles = clone(initialHotelProfiles);
   providerProfiles = clone(initialProviderProfiles);
+  providerServiceOfferings = clone(initialProviderServiceOfferings);
   accounts = clone(initialAccounts);
   accountSessions = {};
   identityAuditEvents = [];
@@ -4188,6 +5855,10 @@ export function resetMockOrdersRepository() {
   platformContentEntries = clone(initialPlatformContentEntries);
   platformContentAudit = [];
   orders = clone(initialOrders);
+  hotelInvoices = [];
+  providerStatements = [];
   nextOrderNumber = 1045;
+  syncAllProviderProfileServiceStates();
+  rebuildFinancialDocumentsFromOrders();
 }
 

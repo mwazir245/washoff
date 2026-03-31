@@ -15,8 +15,8 @@ const createRequest = ({
   headers?: Record<string, string>;
   body?: unknown;
 }) => {
-  const payload =
-    body === undefined ? [] : [Buffer.from(JSON.stringify(body), "utf8")];
+  const payload = body === undefined ? [] : [Buffer.from(JSON.stringify(body), "utf8")];
+
   return Object.assign(Readable.from(payload), {
     method,
     url,
@@ -60,13 +60,48 @@ const createResponse = () => {
   };
 };
 
+const buildAuthenticatedSession = () => ({
+  token: "session-token-1",
+  account: {
+    id: "account-admin-1",
+    fullName: "مدير المنصة",
+    email: "admin@washoff.sa",
+    role: "admin",
+    status: "active",
+    linkedEntityType: "admin",
+    activation: {
+      state: "activated",
+    },
+    createdAt: "2026-03-20T00:00:00.000Z",
+    updatedAt: "2026-03-20T00:00:00.000Z",
+  },
+  session: {
+    id: "session-1",
+    accountId: "account-admin-1",
+    role: "admin",
+    linkedEntityType: "admin",
+    createdAt: "2026-03-20T00:00:00.000Z",
+    expiresAt: "2026-03-27T00:00:00.000Z",
+  },
+});
+
 const createRuntime = () => ({
   config: {
     authMode: "disabled" as const,
     internalApiKey: "test-key",
+    sessionCookieName: "washoff_session",
+    sessionCookieSameSite: "Lax" as const,
+    sessionCookieSecure: false,
+    sessionCookieDomain: undefined,
+    signingSecret: "test-signing-secret",
     workerEnabled: false,
     workerPollIntervalMs: 30_000,
     persistenceMode: "file" as const,
+    environment: "test",
+    databaseTargetLabel: "test-db",
+    mailMode: "smtp",
+    storageMode: "database",
+    jobQueueMode: "database",
   },
   repository: {
     getCurrentAccountSession: async () => null,
@@ -84,16 +119,35 @@ const createRuntime = () => ({
     listHotelOrders: async () => [],
     listProviderIncomingOrders: async () => [],
     listProviderActiveOrders: async () => [],
+    getPlatformSettings: async () => ({}),
+    getPlatformServiceCatalogAdminData: async () => ({}),
+    getProviderServiceManagement: async () => ({}),
+    getProviderPricingAdminData: async () => ({}),
+    getHotelBillingData: async () => ({}),
+    getProviderFinanceData: async () => ({}),
+    getAdminFinanceData: async () => ({}),
+    listPlatformSettingsAudit: async () => [],
+    getPlatformRuntimeStatus: async () => ({}),
+    listPlatformContentEntries: async () => [],
+    listPlatformContentAudit: async () => [],
+    getPlatformPageContent: async () => ({}),
   },
   service: {
-    login: async () => ({ ok: true }),
+    login: async () => buildAuthenticatedSession(),
     validateActivationToken: async () => ({ status: "ready" }),
-    activateAccount: async () => ({ ok: true }),
+    activateAccount: async () => buildAuthenticatedSession(),
     requestPasswordReset: async () => ({ accepted: true }),
     resendActivationEmail: async () => ({ ok: true }),
     validateResetPasswordToken: async () => ({ status: "ready" }),
-    resetPassword: async () => ({ ok: true }),
+    resetPassword: async () => buildAuthenticatedSession(),
     logout: async () => undefined,
+    updatePlatformSettings: async () => ({}),
+    upsertPlatformProduct: async () => ({}),
+    updatePlatformServiceMatrix: async () => ({}),
+    submitProviderServicePricing: async () => ({}),
+    approveProviderServicePricing: async () => ({}),
+    rejectProviderServicePricing: async () => ({}),
+    updatePlatformContentEntry: async () => ({}),
     suspendAccount: async () => ({ ok: true }),
     reactivateAccount: async () => ({ ok: true }),
     registerHotel: async () => ({ ok: true }),
@@ -105,8 +159,17 @@ const createRuntime = () => ({
     createHotelOrder: async () => ({ ok: true }),
     runMatching: async () => ({ ok: true }),
     getAdminDashboardData: async () => ({ ok: true }),
+    getHotelBillingData: async () => ({ ok: true }),
+    getProviderFinanceData: async () => ({ ok: true }),
+    getAdminFinanceData: async () => ({ ok: true }),
+    getAdminFinancePage: async () => ({ ok: true }),
+    listAdminOrdersPage: async () => ({ ok: true }),
+    markHotelInvoiceCollected: async () => ({ ok: true }),
+    markProviderStatementPaid: async () => ({ ok: true }),
     runAssignmentExpirySweep: async () => [],
     acceptIncomingOrder: async () => ({ ok: true }),
+    advanceProviderOrderExecution: async () => ({ ok: true }),
+    confirmHotelOrderCompletion: async () => ({ ok: true }),
     rejectAssignment: async () => ({ ok: true }),
     expireAssignment: async () => ({ ok: true }),
     autoReassignOrder: async () => ({ ok: true }),
@@ -114,6 +177,17 @@ const createRuntime = () => ({
   expiryWorker: {
     runOnce: async () => ({ ok: true }),
   },
+  objectStorage: {
+    readObject: async () => null,
+    verifySignedDownload: async () => null,
+  },
+  checkHealth: async () => ({
+    status: "ok",
+    databaseReady: true,
+    storageReady: true,
+    workerReady: true,
+    metricsAvailable: true,
+  }),
 });
 
 describe("Washoff API handler", () => {
@@ -145,7 +219,7 @@ describe("Washoff API handler", () => {
       metrics: createInMemoryWashoffMetrics(),
     });
 
-    for (let attempt = 0; attempt < 10; attempt += 1) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
       const request = createRequest({
         method: "POST",
         url: "/api/platform/auth/login",
@@ -173,6 +247,6 @@ describe("Washoff API handler", () => {
 
     expect(response.statusCode).toBe(429);
     expect(response.getHeader("retry-after")).toBeDefined();
-    expect(getJson().error).toContain("عدد المحاولات");
+    expect(String(getJson().error)).toContain("المحاولات");
   });
 });

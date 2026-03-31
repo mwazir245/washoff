@@ -8,8 +8,8 @@ import {
   type HotelRegistrationDocumentKind,
   type HotelRegistrationDocumentUploadInput,
   type HotelRegistrationStoredDocumentReference,
-} from "../../src/features/orders/model/hotel";
-import type { WashoffEnvironment } from "./environment";
+} from "../../src/features/orders/model/hotel.ts";
+import type { WashoffEnvironment } from "./environment.ts";
 
 const DOCUMENT_KIND_FILE_PREFIX: Record<HotelRegistrationDocumentKind, string> = {
   commercial_registration: "commercial-registration",

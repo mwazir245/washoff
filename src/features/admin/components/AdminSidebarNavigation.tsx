@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Network,
   PackageSearch,
+  ReceiptText,
   Settings2,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
@@ -44,6 +45,30 @@ const adminNavigationItems = [
     descriptionAr: "نتائج المطابقة والشفافية التشغيلية لكل طلب.",
     descriptionEn: "Matching outcomes and operational transparency for each order.",
     icon: Network,
+  },
+  {
+    to: appRoutes.adminFinance,
+    labelAr: "المالية",
+    labelEn: "Finance",
+    descriptionAr: "فواتير الفنادق، مستحقات المزوّدين، وإجراءات التحصيل والسداد.",
+    descriptionEn: "Hotel invoices, provider statements, and finance actions.",
+    icon: ReceiptText,
+  },
+  {
+    to: appRoutes.adminServices,
+    labelAr: "كتالوج الخدمات",
+    labelEn: "Services",
+    descriptionAr: "مصفوفة المنتجات وأنواع الخدمات والأسعار الاسترشادية.",
+    descriptionEn: "Platform product and service matrix with suggested pricing.",
+    icon: PackageSearch,
+  },
+  {
+    to: appRoutes.adminProviderPricing,
+    labelAr: "اعتماد أسعار المزوّدين",
+    labelEn: "Provider pricing",
+    descriptionAr: "مراجعة الأسعار المقترحة واعتمادها أو رفضها.",
+    descriptionEn: "Review and approve proposed provider prices.",
+    icon: FilePenLine,
   },
   {
     to: appRoutes.adminSettings,

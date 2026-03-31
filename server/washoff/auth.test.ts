@@ -5,6 +5,7 @@ import {
   resolveAuthorizedHotelId,
   resolveAuthorizedProviderId,
   resolveWashoffApiCaller,
+  resolveWashoffSessionTokenFromRequest,
 } from "./auth";
 
 const createRequest = (headers: Record<string, string>) =>
@@ -61,7 +62,7 @@ describe("Washoff API auth", () => {
         authorization: "Bearer valid-session-token",
       }),
       {
-        authMode: "session-or-dev-header",
+        authMode: "session",
         sessionResolver: {
           resolveAccountSession: async (sessionToken: string) => {
             if (sessionToken !== "valid-session-token") {
@@ -124,7 +125,31 @@ describe("Washoff API auth", () => {
           authorization: "Bearer invalid token",
         }),
         {
-          authMode: "session-or-dev-header",
+          authMode: "session",
+          sessionResolver: {
+            resolveAccountSession: async () => null,
+          },
+        },
+      ),
+    ).rejects.toThrow(WashoffApiAuthError);
+  });
+
+  it("reads the session token from the secure cookie when present", () => {
+    const token = resolveWashoffSessionTokenFromRequest(
+      createRequest({
+        cookie: "washoff_session=validsession12345",
+      }),
+    );
+
+    expect(token).toBe("validsession12345");
+  });
+
+  it("requires an authenticated session in session mode when no token is provided", async () => {
+    await expect(
+      resolveWashoffApiCaller(
+        createRequest({}),
+        {
+          authMode: "session",
           sessionResolver: {
             resolveAccountSession: async () => null,
           },

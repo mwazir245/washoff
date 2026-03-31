@@ -1,0 +1,63 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: washoff-app
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      WASHOFF_RUN_MIGRATIONS: "true"
+      WASHOFF_RUN_PRISMA_GENERATE: "true"
+      WASHOFF_ENABLE_WORKER: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  db:
+    image: postgres:15
+    container_name: washoff-db
+    restart: always
+    environment:
+      POSTGRES_USER: washoff
+      POSTGRES_PASSWORD: washoff
+      POSTGRES_DB: washoff
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U washoff -d washoff"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: washoff-worker
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      WASHOFF_RUN_MIGRATIONS: "false"
+      WASHOFF_RUN_PRISMA_GENERATE: "true"
+      WASHOFF_ENABLE_WORKER: "true"
+    command: ["npm", "run", "worker:start"]
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

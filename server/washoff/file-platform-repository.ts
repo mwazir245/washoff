@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { WashoffPlatformRepository } from "../../src/features/orders/application/ports/washoff-platform-repository";
+import type { WashoffPlatformRepository } from "../../src/features/orders/application/ports/washoff-platform-repository.ts";
 import {
   activateAccount,
   listIdentityAuditEvents,
@@ -9,9 +9,16 @@ import {
   acceptIncomingOrder,
   advanceProviderOrderExecution,
   getCurrentAccountSession,
+  getAdminFinanceData,
+  getHotelBillingData,
   getPlatformPageContent,
   getPlatformSettings,
+  getPlatformServiceCatalogAdminData,
+  getProviderFinanceData,
+  getProviderPricingAdminData,
+  getProviderServiceManagement,
   autoReassignOrder,
+  approveProviderServicePricing,
   confirmHotelOrderCompletion,
   createHotelOrder,
   expirePendingAssignment,
@@ -26,14 +33,20 @@ import {
   hydrateMockOrdersRepositoryFromPersistenceSnapshot,
   login,
   logout,
+  markHotelInvoiceCollected,
+  markProviderStatementPaid,
   listProviderRegistrations,
   recordIdentityAuditEventEntry,
   reactivateAccount,
   resendActivationEmail,
   requestPasswordReset,
+  rejectProviderServicePricing,
   resetPassword,
+  submitProviderServicePricing,
   updatePlatformContentEntry,
+  updatePlatformServiceMatrix,
   updatePlatformSettings,
+  upsertPlatformProduct,
   listAllOrders,
   listHotels,
   listHotelOrders,
@@ -52,10 +65,10 @@ import {
   suspendAccount,
   validateActivationToken,
   validateResetPasswordToken,
-} from "../../src/features/orders/data/mock-orders.repository";
-import type { PlatformPersistenceSnapshot } from "../../src/features/orders/infrastructure/persistence/persistence-records";
-import { ReassignmentReason } from "../../src/features/orders/model/assignment";
-import type { PlatformRuntimeStatus } from "../../src/features/platform-settings/model/platform-settings";
+} from "../../src/features/orders/data/mock-orders.repository.ts";
+import type { PlatformPersistenceSnapshot } from "../../src/features/orders/infrastructure/persistence/persistence-records.ts";
+import { ReassignmentReason } from "../../src/features/orders/model/assignment.ts";
+import type { PlatformRuntimeStatus } from "../../src/features/platform-settings/model/platform-settings.ts";
 
 export interface FileBackedWashoffPlatformRepositoryOptions {
   dataFilePath?: string;
@@ -152,6 +165,13 @@ export const createFileBackedWashoffPlatformRepository = (
     listAccounts: () => readOnly(() => listAccounts()),
     listIdentityAuditEvents: () => readOnly(() => listIdentityAuditEvents()),
     getPlatformSettings: () => readOnly(() => getPlatformSettings()),
+    getPlatformServiceCatalogAdminData: () => readOnly(() => getPlatformServiceCatalogAdminData()),
+    getHotelBillingData: (hotelId?: string) => readOnly(() => getHotelBillingData(hotelId)),
+    getProviderServiceManagement: (providerId?: string) =>
+      readOnly(() => getProviderServiceManagement(providerId)),
+    getProviderFinanceData: (providerId?: string) => readOnly(() => getProviderFinanceData(providerId)),
+    getProviderPricingAdminData: () => readOnly(() => getProviderPricingAdminData()),
+    getAdminFinanceData: () => readOnly(() => getAdminFinanceData()),
     listPlatformSettingsAudit: () => readOnly(() => listPlatformSettingsAudit()),
     getPlatformRuntimeStatus: () => readOnly(async () => runtimeStatus),
     listPlatformContentEntries: (pageKey?: string) => readOnly(() => listPlatformContentEntries(pageKey)),
@@ -165,6 +185,19 @@ export const createFileBackedWashoffPlatformRepository = (
     reactivateAccount: (accountId: string, reasonAr?: string) =>
       readAndPersist(() => reactivateAccount(accountId, reasonAr)),
     updatePlatformSettings: (command) => readAndPersist(() => updatePlatformSettings(command)),
+    upsertPlatformProduct: (command) => readAndPersist(() => upsertPlatformProduct(command)),
+    updatePlatformServiceMatrix: (command) =>
+      readAndPersist(() => updatePlatformServiceMatrix(command)),
+    submitProviderServicePricing: (command) =>
+      readAndPersist(() => submitProviderServicePricing(command)),
+    approveProviderServicePricing: (offeringId: string) =>
+      readAndPersist(() => approveProviderServicePricing(offeringId)),
+    rejectProviderServicePricing: (command) =>
+      readAndPersist(() => rejectProviderServicePricing(command)),
+    markHotelInvoiceCollected: (command) =>
+      readAndPersist(() => markHotelInvoiceCollected(command)),
+    markProviderStatementPaid: (command) =>
+      readAndPersist(() => markProviderStatementPaid(command)),
     updatePlatformContentEntry: (command) =>
       readAndPersist(() => updatePlatformContentEntry(command)),
     registerHotel: (input) => readAndPersist(() => registerHotel(input)),
@@ -175,7 +208,7 @@ export const createFileBackedWashoffPlatformRepository = (
     getProviderProfile: (providerId?: string) => readAndPersist(() => getProviderProfile(providerId)),
     listProviders: () => readAndPersist(() => listProviders()),
     listProviderRegistrations: () => readOnly(() => listProviderRegistrations()),
-    listServiceCatalog: () => readOnly(() => listServiceCatalog()),
+    listServiceCatalog: (hotelId?: string) => readOnly(() => listServiceCatalog(hotelId)),
     listAllOrders: () => readAndPersist(() => listAllOrders()),
     listHotelOrders: (hotelId?: string) => readAndPersist(() => listHotelOrders(hotelId)),
     listProviderIncomingOrders: (providerId?: string) =>

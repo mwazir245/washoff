@@ -2,13 +2,13 @@ import {
   AssignmentStatus,
   OrderStatus,
   type LaundryOrder,
-} from "../../src/features/orders/model";
+} from "../../src/features/orders/model/index.ts";
 import {
   createInMemoryWashoffJobQueue,
   type WashoffJobQueue,
-} from "./job-queue";
-import { createWashoffLogger, type WashoffLogger } from "./logger";
-import type { WashoffMetrics } from "./metrics";
+} from "./job-queue.ts";
+import { createWashoffLogger, type WashoffLogger } from "./logger.ts";
+import type { WashoffMetrics } from "./metrics.ts";
 
 export interface WashoffAssignmentExpiryWorkerDeps {
   repository: {
@@ -119,7 +119,7 @@ export const createWashoffAssignmentExpiryWorker = (
 
   return {
     async runOnce(referenceTime = new Date().toISOString()): Promise<WashoffAssignmentExpiryWorkerResult> {
-      const queuedJob = queue.enqueue({
+      const queuedJob = await queue.enqueue({
         type: "assignment-expiry-sweep",
         lockKey: "assignment-expiry-sweep",
         payload: {

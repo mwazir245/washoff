@@ -1,4 +1,4 @@
-import type { AccountRole } from "../../src/features/auth/model";
+import type { AccountRole } from "../../src/features/auth/model/index.ts";
 
 interface IdentityEmailLayoutInput {
   headingAr: string;

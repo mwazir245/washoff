@@ -1,0 +1,17 @@
+.codex
+.git
+.github
+.idea
+.vscode
+coverage
+data
+dist
+node_modules
+tmp
+*.log
+.env
+.env.qa
+.env.local
+.env.docker
+.env.docker.*
+npm-debug.log*

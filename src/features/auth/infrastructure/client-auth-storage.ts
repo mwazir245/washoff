@@ -4,9 +4,9 @@ import type {
   AuthenticatedAccountSession,
 } from "@/features/auth/model";
 
-const SESSION_TOKEN_KEY = "washoff:auth:sessionToken";
 const SESSION_ACCOUNT_KEY = "washoff:auth:account";
 const memoryStorage = new Map<string, string>();
+let memorySessionToken: string | null = null;
 
 const readWindowStorage = () => {
   if (typeof window === "undefined") {
@@ -48,16 +48,15 @@ const removeStorageValue = (key: string) => {
 };
 
 export interface StoredClientAccountSession {
-  token: string;
+  token?: string;
   account: AccountProfile;
   session: AccountSessionProfile;
 }
 
 export const readStoredClientSession = (): StoredClientAccountSession | null => {
-  const token = readStorageValue(SESSION_TOKEN_KEY);
   const serializedAccount = readStorageValue(SESSION_ACCOUNT_KEY);
 
-  if (!token || !serializedAccount) {
+  if (!serializedAccount) {
     return null;
   }
 
@@ -68,7 +67,7 @@ export const readStoredClientSession = (): StoredClientAccountSession | null => 
     };
 
     return {
-      token,
+      token: memorySessionToken ?? undefined,
       account: parsed.account,
       session: parsed.session,
     };
@@ -77,8 +76,10 @@ export const readStoredClientSession = (): StoredClientAccountSession | null => 
   }
 };
 
-export const storeClientSession = (session: AuthenticatedAccountSession) => {
-  writeStorageValue(SESSION_TOKEN_KEY, session.token);
+export const storeClientSession = (
+  session: Pick<AuthenticatedAccountSession, "account" | "session"> & { token?: string },
+) => {
+  memorySessionToken = session.token?.trim() ? session.token : null;
   writeStorageValue(
     SESSION_ACCOUNT_KEY,
     JSON.stringify({
@@ -89,12 +90,12 @@ export const storeClientSession = (session: AuthenticatedAccountSession) => {
 };
 
 export const clearClientSession = () => {
-  removeStorageValue(SESSION_TOKEN_KEY);
+  memorySessionToken = null;
   removeStorageValue(SESSION_ACCOUNT_KEY);
 };
 
 export const getStoredClientSessionToken = () => {
-  return readStoredClientSession()?.token;
+  return memorySessionToken ?? undefined;
 };
 
 export const getStoredClientAccount = () => {

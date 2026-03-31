@@ -2,29 +2,40 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type {
   AdvanceProviderOrderExecutionCommand,
   ConfirmHotelOrderCompletionCommand,
+  GetAdminFinancePageCommand,
+  ListAdminOrdersPageCommand,
+  MarkHotelInvoiceCollectedCommand,
+  MarkProviderStatementPaidCommand,
+  RejectProviderServicePricingCommand,
+  SubmitProviderServicePricingCommand,
+  UpdatePlatformServiceMatrixCommand,
   UpdatePlatformContentEntryCommand,
   UpdatePlatformSettingsCommand,
-} from "../../src/features/orders/application/contracts/platform-contracts";
-import type { HotelRegistrationInput } from "../../src/features/orders/model/hotel";
+  UpsertPlatformProductCommand,
+} from "../../src/features/orders/application/contracts/platform-contracts.ts";
+import type { AuthenticatedAccountSession } from "../../src/features/auth/model/index.ts";
+import type { HotelRegistrationInput } from "../../src/features/orders/model/hotel.ts";
+import type { ProviderRegistrationInput } from "../../src/features/orders/model/provider.ts";
 import {
   assertValidWashoffSessionToken,
   isWashoffApiAuthError,
   requireWashoffRole,
   resolveAuthorizedHotelId,
   resolveAuthorizedProviderId,
+  resolveWashoffSessionTokenFromRequest,
   resolveWashoffApiCaller,
   type WashoffApiAuthConfig,
   type WashoffApiCaller,
-} from "./auth";
-import type { WashoffLogger } from "./logger";
-import type { WashoffMetrics } from "./metrics";
+} from "./auth.ts";
+import { appendSetCookieHeader, serializeCookie } from "./http-cookies.ts";
+import type { WashoffLogger } from "./logger.ts";
+import type { WashoffMetrics } from "./metrics.ts";
 import {
   WashoffRateLimitError,
   createInMemoryWashoffRateLimiter,
   type WashoffRateLimitPolicy,
   type WashoffRateLimiter,
-} from "./rate-limit";
-import { readStoredHotelRegistrationDocument } from "./hotel-registration-documents";
+} from "./rate-limit.ts";
 
 export const WASHOFF_API_BASE_PATH = "/api/platform";
 
@@ -52,13 +63,22 @@ interface AutoReassignOrderRequest {
 
 type AdvanceProviderOrderExecutionRequest = AdvanceProviderOrderExecutionCommand;
 type ConfirmHotelOrderCompletionRequest = ConfirmHotelOrderCompletionCommand;
+type MarkHotelInvoiceCollectedRequest = MarkHotelInvoiceCollectedCommand;
+type MarkProviderStatementPaidRequest = MarkProviderStatementPaidCommand;
+type UpsertPlatformProductRequest = UpsertPlatformProductCommand;
+type UpdatePlatformServiceMatrixRequest = UpdatePlatformServiceMatrixCommand;
+type SubmitProviderServicePricingRequest = SubmitProviderServicePricingCommand;
+type RejectProviderServicePricingRequest = RejectProviderServicePricingCommand;
 type UpdatePlatformSettingsRequest = UpdatePlatformSettingsCommand;
 type UpdatePlatformContentEntryRequest = UpdatePlatformContentEntryCommand;
 
 interface CreateHotelOrderRequest {
   hotelId?: string;
-  serviceIds: string[];
-  itemCount: number;
+  roomNumber: string;
+  items: Array<{
+    serviceId: string;
+    quantity: number;
+  }>;
   pickupAt: string;
   notes?: string;
   notesAr?: string;
@@ -68,16 +88,7 @@ interface CreateHotelOrderRequest {
 
 type RegisterHotelRequest = HotelRegistrationInput;
 
-interface RegisterProviderRequest {
-  providerName: string;
-  city: string;
-  contactPersonName: string;
-  contactEmail: string;
-  contactPhone: string;
-  supportedServiceIds: string[];
-  dailyCapacityKg: number;
-  notesAr?: string;
-}
+type RegisterProviderRequest = ProviderRegistrationInput;
 
 interface LoginRequest {
   email: string;
@@ -109,6 +120,16 @@ interface AccountAdminActionRequest {
   reasonAr?: string;
 }
 
+interface ApproveProviderServicePricingRequest {
+  offeringId?: string;
+}
+
+interface AdminFinanceActionPath {
+  entityType: "invoices" | "provider-statements";
+  entityId: string;
+  action: "collect" | "pay";
+}
+
 interface WashoffApiEnvelope<Value> {
   data: Value;
 }
@@ -121,9 +142,19 @@ export interface WashoffApiRuntime {
   config: {
     authMode: WashoffApiAuthConfig["authMode"];
     internalApiKey?: string;
+    sessionCookieName: string;
+    sessionCookieSameSite: "Strict" | "Lax" | "None";
+    sessionCookieSecure: boolean;
+    sessionCookieDomain?: string;
+    signingSecret: string;
     workerEnabled: boolean;
     workerPollIntervalMs: number;
     persistenceMode: "file" | "db";
+    environment: string;
+    databaseTargetLabel: string;
+    mailMode: string;
+    storageMode: string;
+    jobQueueMode: string;
   };
   repository: {
     getCurrentAccountSession(): Promise<unknown>;
@@ -131,6 +162,12 @@ export interface WashoffApiRuntime {
     listAccounts(): Promise<unknown>;
     listIdentityAuditEvents(): Promise<unknown>;
     getPlatformSettings(): Promise<unknown>;
+    getPlatformServiceCatalogAdminData(): Promise<unknown>;
+    getProviderServiceManagement(providerId?: string): Promise<unknown>;
+    getProviderPricingAdminData(): Promise<unknown>;
+    getHotelBillingData(hotelId?: string): Promise<unknown>;
+    getProviderFinanceData(providerId?: string): Promise<unknown>;
+    getAdminFinanceData(): Promise<unknown>;
     listPlatformSettingsAudit(): Promise<unknown>;
     getPlatformRuntimeStatus(): Promise<unknown>;
     listPlatformContentEntries(pageKey?: string): Promise<unknown>;
@@ -142,7 +179,7 @@ export interface WashoffApiRuntime {
     getProviderProfile(providerId?: string): Promise<unknown>;
     listProviders(): Promise<unknown>;
     listProviderRegistrations(): Promise<unknown>;
-    listServiceCatalog(): Promise<unknown>;
+    listServiceCatalog(hotelId?: string): Promise<unknown>;
     listAllOrders(): Promise<unknown>;
     listHotelOrders(hotelId?: string): Promise<unknown>;
     listProviderIncomingOrders(providerId?: string): Promise<unknown>;
@@ -158,6 +195,11 @@ export interface WashoffApiRuntime {
     resetPassword(command: ResetPasswordRequest): Promise<unknown>;
     logout(sessionToken?: string): Promise<void>;
     updatePlatformSettings(command: UpdatePlatformSettingsRequest): Promise<unknown>;
+    upsertPlatformProduct(command: UpsertPlatformProductRequest): Promise<unknown>;
+    updatePlatformServiceMatrix(command: UpdatePlatformServiceMatrixRequest): Promise<unknown>;
+    submitProviderServicePricing(command: SubmitProviderServicePricingRequest): Promise<unknown>;
+    approveProviderServicePricing(command: { offeringId: string }): Promise<unknown>;
+    rejectProviderServicePricing(command: RejectProviderServicePricingRequest): Promise<unknown>;
     updatePlatformContentEntry(command: UpdatePlatformContentEntryRequest): Promise<unknown>;
     suspendAccount(command: { accountId: string; reasonAr?: string }): Promise<unknown>;
     reactivateAccount(command: { accountId: string; reasonAr?: string }): Promise<unknown>;
@@ -170,6 +212,13 @@ export interface WashoffApiRuntime {
     createHotelOrder(command: CreateHotelOrderRequest): Promise<unknown>;
     runMatching(command: unknown): Promise<unknown>;
     getAdminDashboardData(): Promise<unknown>;
+    getHotelBillingData(): Promise<unknown>;
+    getProviderFinanceData(): Promise<unknown>;
+    getAdminFinanceData(): Promise<unknown>;
+    getAdminFinancePage(command: GetAdminFinancePageCommand): Promise<unknown>;
+    listAdminOrdersPage(command: ListAdminOrdersPageCommand): Promise<unknown>;
+    markHotelInvoiceCollected(command: MarkHotelInvoiceCollectedRequest): Promise<unknown>;
+    markProviderStatementPaid(command: MarkProviderStatementPaidRequest): Promise<unknown>;
     runAssignmentExpirySweep(referenceTime?: string): Promise<unknown>;
     acceptIncomingOrder(orderId: string, providerId?: string): Promise<unknown>;
     advanceProviderOrderExecution(command: AdvanceProviderOrderExecutionRequest): Promise<unknown>;
@@ -181,7 +230,42 @@ export interface WashoffApiRuntime {
   expiryWorker: {
     runOnce(referenceTime?: string): Promise<unknown>;
   };
+  objectStorage: {
+    readObject(
+      objectId: string,
+    ): Promise<
+      | {
+          object: {
+            fileName: string;
+            mimeType: string;
+            sizeBytes: number;
+          };
+          contentBytes: Buffer;
+        }
+      | null
+    >;
+    verifySignedDownload(input: {
+      objectId: string;
+      fileName?: string;
+      disposition?: string | null;
+      purpose?: string | null;
+      expires?: string | null;
+      signature?: string | null;
+    }): boolean;
+  };
+  checkHealth(): Promise<{
+    databaseReady: boolean;
+    storageReady: boolean;
+    workerReady: boolean;
+    metricsAvailable: boolean;
+    objectStorageMode: string;
+    jobQueueMode: string;
+  }>;
 }
+
+type PublicAuthSessionEnvelope = Omit<AuthenticatedAccountSession, "token"> & {
+  token: "";
+};
 
 export interface WashoffApiHandlerOptions {
   getRuntime(): Promise<WashoffApiRuntime>;
@@ -203,25 +287,25 @@ class WashoffApiRequestError extends Error {
 
 const REQUEST_RATE_LIMIT_POLICY: WashoffRateLimitPolicy = {
   name: "api_requests",
-  limit: 240,
+  limit: 180,
   windowMs: 60_000,
 };
 
 const LOGIN_RATE_LIMIT_POLICY: WashoffRateLimitPolicy = {
   name: "login",
-  limit: 10,
-  windowMs: 60_000,
+  limit: 5,
+  windowMs: 10 * 60_000,
 };
 
 const PASSWORD_RESET_RATE_LIMIT_POLICY: WashoffRateLimitPolicy = {
   name: "password_reset",
-  limit: 5,
+  limit: 4,
   windowMs: 15 * 60_000,
 };
 
 const ACTIVATION_RATE_LIMIT_POLICY: WashoffRateLimitPolicy = {
   name: "activation",
-  limit: 10,
+  limit: 5,
   windowMs: 15 * 60_000,
 };
 
@@ -252,6 +336,58 @@ const sendJson = <Value>(
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.end(JSON.stringify(payload));
 };
+
+const parsePositiveIntegerQueryValue = (
+  value: string | null,
+  fallback: number,
+  { min = 1, max = 100 }: { min?: number; max?: number } = {},
+) => {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsedValue = Number.parseInt(value, 10);
+
+  if (!Number.isFinite(parsedValue) || Number.isNaN(parsedValue)) {
+    return fallback;
+  }
+
+  return Math.min(Math.max(parsedValue, min), max);
+};
+
+const buildSessionCookieValue = (
+  runtime: WashoffApiRuntime,
+  session: AuthenticatedAccountSession,
+) =>
+  serializeCookie({
+    name: runtime.config.sessionCookieName,
+    value: session.token,
+    httpOnly: true,
+    secure: runtime.config.sessionCookieSecure,
+    sameSite: runtime.config.sessionCookieSameSite,
+    path: "/",
+    expiresAt: session.session.expiresAt,
+  });
+
+const buildExpiredSessionCookieValue = (runtime: WashoffApiRuntime) =>
+  serializeCookie({
+    name: runtime.config.sessionCookieName,
+    value: "",
+    httpOnly: true,
+    secure: runtime.config.sessionCookieSecure,
+    sameSite: runtime.config.sessionCookieSameSite,
+    path: "/",
+    maxAgeSeconds: 0,
+    expiresAt: new Date(0),
+  });
+
+const toPublicAuthSessionEnvelope = (
+  session: AuthenticatedAccountSession,
+): PublicAuthSessionEnvelope => ({
+  account: session.account,
+  session: session.session,
+  token: "",
+});
 
 const buildUrl = (request: IncomingMessage) => new URL(request.url ?? "/", "http://washoff.local");
 
@@ -315,6 +451,49 @@ const matchAdminContentPath = (pathname: string) => {
   };
 };
 
+const matchAdminServiceMatrixPath = (pathname: string) => {
+  const match = new RegExp(`^${WASHOFF_API_BASE_PATH}/admin/services/matrix/([^/]+)$`).exec(pathname);
+
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    matrixRowId: decodeURIComponent(match[1]),
+  };
+};
+
+const matchAdminProviderPricingPath = (pathname: string) => {
+  const match = new RegExp(
+    `^${WASHOFF_API_BASE_PATH}/admin/provider-pricing/([^/]+)/(approve|reject)$`,
+  ).exec(pathname);
+
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    offeringId: decodeURIComponent(match[1]),
+    action: match[2] as "approve" | "reject",
+  };
+};
+
+const matchAdminFinancePath = (pathname: string): AdminFinanceActionPath | undefined => {
+  const match = new RegExp(
+    `^${WASHOFF_API_BASE_PATH}/admin/finance/(invoices|provider-statements)/([^/]+)/(collect|pay)$`,
+  ).exec(pathname);
+
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    entityType: match[1] as AdminFinanceActionPath["entityType"],
+    entityId: decodeURIComponent(match[2]),
+    action: match[3] as AdminFinanceActionPath["action"],
+  };
+};
+
 const matchHotelDocumentPath = (pathname: string) => {
   const match = new RegExp(
     `^${WASHOFF_API_BASE_PATH}/hotels/([^/]+)/documents/(commercial-registration|delegation-letter)$`,
@@ -327,6 +506,32 @@ const matchHotelDocumentPath = (pathname: string) => {
   return {
     hotelId: decodeURIComponent(match[1]),
     kind: match[2] === "commercial-registration" ? "commercial_registration" : "delegation_letter",
+  } as const;
+};
+
+const matchProviderDocumentPath = (pathname: string) => {
+  const match = new RegExp(
+    `^${WASHOFF_API_BASE_PATH}/providers/([^/]+)/documents/(commercial-registration)$`,
+  ).exec(pathname);
+
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    providerId: decodeURIComponent(match[1]),
+  } as const;
+};
+
+const matchSignedObjectPath = (pathname: string) => {
+  const match = new RegExp(`^${WASHOFF_API_BASE_PATH}/storage/objects/([^/]+)$`).exec(pathname);
+
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    objectId: decodeURIComponent(match[1]),
   } as const;
 };
 
@@ -392,6 +597,7 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
     return resolveWashoffApiCaller(request, {
       authMode: runtime.config.authMode,
       internalApiKey: runtime.config.internalApiKey,
+      sessionCookieName: runtime.config.sessionCookieName,
       sessionResolver: {
         resolveAccountSession: runtime.repository.resolveAccountSession,
       },
@@ -440,12 +646,23 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
 
     if (pathname === "/health") {
       const runtime = await options.getRuntime();
+      const health = await runtime.checkHealth();
       sendJson(response, 200, {
         data: {
           status: "ok",
           checkedAt: new Date().toISOString(),
+          environment: runtime.config.environment,
           persistenceMode: runtime.config.persistenceMode,
+          databaseTargetLabel: runtime.config.databaseTargetLabel,
+          authMode: runtime.config.authMode,
+          mailMode: runtime.config.mailMode,
+          storageMode: runtime.config.storageMode,
+          jobQueueMode: runtime.config.jobQueueMode,
           workerEnabled: runtime.config.workerEnabled,
+          metricsAvailable: health.metricsAvailable,
+          databaseReady: health.databaseReady,
+          storageReady: health.storageReady,
+          workerReady: health.workerReady,
         },
       });
       options.metrics.incrementCounter("washoff_api_requests_total", {
@@ -462,6 +679,28 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
       return true;
     }
 
+    if (pathname === "/metrics") {
+      const runtime = await options.getRuntime();
+      const internalApiKey = Array.isArray(request.headers["x-washoff-internal-key"])
+        ? request.headers["x-washoff-internal-key"][0]
+        : request.headers["x-washoff-internal-key"];
+
+      if (!runtime.config.internalApiKey || internalApiKey !== runtime.config.internalApiKey) {
+        sendJson(response, 403, {
+          error: "هذا المسار مخصص للمراقبة الداخلية فقط.",
+        });
+        return true;
+      }
+
+      sendJson(response, 200, {
+        data: {
+          generatedAt: new Date().toISOString(),
+          counters: options.metrics.getCounters(),
+        },
+      });
+      return true;
+    }
+
     if (!pathname.startsWith(WASHOFF_API_BASE_PATH)) {
       return false;
     }
@@ -472,6 +711,7 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
       await options.ensureWorkerLoop?.();
       const runtime = await options.getRuntime();
       rateLimiter.enforce(REQUEST_RATE_LIMIT_POLICY, clientAddress);
+      const signedObjectAction = matchSignedObjectPath(pathname);
 
       if (method === "POST" && pathname === `${WASHOFF_API_BASE_PATH}/register/hotel`) {
         const body = await readJsonBody<RegisterHotelRequest>(request);
@@ -491,8 +731,10 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
           LOGIN_RATE_LIMIT_POLICY,
           `${clientAddress}:${normalizeEmailKey(body.email)}`,
         );
+        const session = (await runtime.service.login(body)) as AuthenticatedAccountSession;
+        appendSetCookieHeader(response, buildSessionCookieValue(runtime, session));
         sendJson(response, 200, {
-          data: await runtime.service.login(body),
+          data: toPublicAuthSessionEnvelope(session),
         });
         options.metrics.incrementCounter("washoff_auth_events_total", {
           event: "login_succeeded",
@@ -517,8 +759,10 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
       } else if (method === "POST" && pathname === `${WASHOFF_API_BASE_PATH}/auth/activate`) {
         const body = await readJsonBody<ActivateAccountRequest>(request);
         rateLimiter.enforce(ACTIVATION_RATE_LIMIT_POLICY, `${clientAddress}:${body.token}`);
+        const session = (await runtime.service.activateAccount(body)) as AuthenticatedAccountSession;
+        appendSetCookieHeader(response, buildSessionCookieValue(runtime, session));
         sendJson(response, 200, {
-          data: await runtime.service.activateAccount(body),
+          data: toPublicAuthSessionEnvelope(session),
         });
         options.metrics.incrementCounter("washoff_auth_events_total", {
           event: "activation_completed",
@@ -564,8 +808,10 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
       ) {
         const body = await readJsonBody<ResetPasswordRequest>(request);
         rateLimiter.enforce(PASSWORD_RESET_RATE_LIMIT_POLICY, `${clientAddress}:${body.token}`);
+        const session = (await runtime.service.resetPassword(body)) as AuthenticatedAccountSession;
+        appendSetCookieHeader(response, buildSessionCookieValue(runtime, session));
         sendJson(response, 200, {
-          data: await runtime.service.resetPassword(body),
+          data: toPublicAuthSessionEnvelope(session),
         });
         options.metrics.incrementCounter("washoff_auth_events_total", {
           event: "password_reset_completed",
@@ -574,13 +820,10 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
           clientAddress,
         });
       } else if (method === "GET" && pathname === `${WASHOFF_API_BASE_PATH}/auth/session`) {
-        const authorizationHeader = request.headers.authorization;
-        const sessionToken =
-          typeof authorizationHeader === "string" && authorizationHeader.startsWith("Bearer ")
-            ? authorizationHeader.slice("Bearer ".length).trim()
-            : Array.isArray(request.headers["x-washoff-session-token"])
-              ? request.headers["x-washoff-session-token"][0]
-              : request.headers["x-washoff-session-token"];
+        const sessionToken = resolveWashoffSessionTokenFromRequest(
+          request,
+          runtime.config.sessionCookieName,
+        );
 
         if (!sessionToken) {
           sendJson(response, 200, {
@@ -588,31 +831,82 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
           });
         } else {
           const validatedSessionToken = assertValidWashoffSessionToken(sessionToken);
+          const resolvedSession = await runtime.repository.resolveAccountSession(validatedSessionToken);
+
+          if (!resolvedSession) {
+            appendSetCookieHeader(response, buildExpiredSessionCookieValue(runtime));
+          }
+
           sendJson(response, 200, {
-            data: await runtime.repository.resolveAccountSession(validatedSessionToken),
+            data: resolvedSession,
           });
         }
       } else if (method === "POST" && pathname === `${WASHOFF_API_BASE_PATH}/auth/logout`) {
-        const sessionHeader =
-          typeof request.headers.authorization === "string" &&
-          request.headers.authorization.startsWith("Bearer ")
-            ? request.headers.authorization.slice("Bearer ".length).trim()
-            : Array.isArray(request.headers["x-washoff-session-token"])
-              ? request.headers["x-washoff-session-token"][0]
-              : request.headers["x-washoff-session-token"];
+        const sessionHeader = resolveWashoffSessionTokenFromRequest(
+          request,
+          runtime.config.sessionCookieName,
+        );
 
         await runtime.service.logout(
           sessionHeader ? assertValidWashoffSessionToken(sessionHeader) : undefined,
         );
+        appendSetCookieHeader(response, buildExpiredSessionCookieValue(runtime));
         sendJson(response, 200, {
           data: null,
         });
         options.metrics.incrementCounter("washoff_auth_events_total", {
           event: "logout",
         });
+      } else if (method === "GET" && signedObjectAction) {
+        const fileName = requestUrl.searchParams.get("fileName") ?? undefined;
+        const disposition = requestUrl.searchParams.get("disposition");
+        const purpose = requestUrl.searchParams.get("purpose");
+        const expires = requestUrl.searchParams.get("expires");
+        const signature = requestUrl.searchParams.get("signature");
+
+        if (
+          !runtime.objectStorage.verifySignedDownload({
+            objectId: signedObjectAction.objectId,
+            fileName,
+            disposition,
+            purpose,
+            expires,
+            signature,
+          })
+        ) {
+          throw new WashoffApiRequestError("رابط تنزيل الملف غير صالح أو انتهت صلاحيته.", 403);
+        }
+
+        const storedObject = await runtime.objectStorage.readObject(signedObjectAction.objectId);
+
+        if (!storedObject) {
+          throw new WashoffApiRequestError("تعذر العثور على الملف المطلوب.", 404);
+        }
+
+        const resolvedDisposition =
+          disposition === "inline" || disposition === "attachment" ? disposition : "attachment";
+        const resolvedFileName = fileName?.trim() || storedObject.object.fileName;
+        response.statusCode = 200;
+        response.setHeader("Content-Type", `${storedObject.object.mimeType}; charset=binary`);
+        response.setHeader("Content-Length", String(storedObject.object.sizeBytes));
+        response.setHeader(
+          "Content-Disposition",
+          `${resolvedDisposition}; filename="${encodeURIComponent(resolvedFileName)}"`,
+        );
+        response.end(storedObject.contentBytes);
       } else if (method === "GET" && pathname === `${WASHOFF_API_BASE_PATH}/service-catalog`) {
+        const caller = await resolveCaller(request);
         sendJson(response, 200, {
-          data: await runtime.repository.listServiceCatalog(),
+          data: await runtime.repository.listServiceCatalog(
+            caller.role === "hotel" ? caller.linkedEntityId : undefined,
+          ),
+        });
+      } else if (
+        method === "GET" &&
+        pathname === `${WASHOFF_API_BASE_PATH}/service-catalog/platform`
+      ) {
+        sendJson(response, 200, {
+          data: await runtime.repository.getPlatformServiceCatalogAdminData(),
         });
       } else if (method === "GET" && pathname === `${WASHOFF_API_BASE_PATH}/content`) {
         sendJson(response, 200, {
@@ -627,7 +921,11 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
         const onboardingAction = matchOnboardingActionPath(pathname);
         const accountAction = matchAccountActionPath(pathname);
         const adminContentAction = matchAdminContentPath(pathname);
+        const adminServiceMatrixAction = matchAdminServiceMatrixPath(pathname);
+        const adminProviderPricingAction = matchAdminProviderPricingPath(pathname);
+        const adminFinanceAction = matchAdminFinancePath(pathname);
         const hotelDocumentAction = matchHotelDocumentPath(pathname);
+        const providerDocumentAction = matchProviderDocumentPath(pathname);
 
         if (method === "GET" && hotelDocumentAction) {
           await withRole(caller, ["hotel", "admin"], async () => {
@@ -656,15 +954,59 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
               throw new WashoffApiRequestError("لا يتوفر تنزيل هذا المستند في وضع المعاينة الحالي.", 404);
             }
 
-            const fileBuffer = await readStoredHotelRegistrationDocument(documentReference.storageKey);
+            const storedObject = await runtime.objectStorage.readObject(documentReference.storageKey);
+
+            if (!storedObject) {
+              throw new WashoffApiRequestError("تعذر العثور على الملف المطلوب.", 404);
+            }
+
             response.statusCode = 200;
             response.setHeader("Content-Type", `${documentReference.mimeType}; charset=binary`);
-            response.setHeader("Content-Length", String(fileBuffer.byteLength));
+            response.setHeader("Content-Length", String(storedObject.contentBytes.byteLength));
             response.setHeader(
               "Content-Disposition",
               `inline; filename="${encodeURIComponent(documentReference.fileName)}"`,
             );
-            response.end(fileBuffer);
+            response.end(storedObject.contentBytes);
+          });
+        } else if (method === "GET" && providerDocumentAction) {
+          await withRole(caller, ["provider", "admin"], async () => {
+            const authorizedProviderId = resolveAuthorizedProviderId(caller, providerDocumentAction.providerId);
+            const provider = (await runtime.repository.listProviderRegistrations()).find(
+              (entry) => entry.id === authorizedProviderId,
+            );
+
+            if (!provider) {
+              throw new WashoffApiRequestError("تعذر العثور على ملف المزوّد المطلوب.", 404);
+            }
+
+            const documentReference = provider.businessProfile.commercialRegistrationFile;
+
+            if (!documentReference) {
+              throw new WashoffApiRequestError("المستند المطلوب غير متوفر لهذا المزوّد.", 404);
+            }
+
+            if (
+              documentReference.storageKey.startsWith("preview://") ||
+              documentReference.storageKey.startsWith("legacy://")
+            ) {
+              throw new WashoffApiRequestError("لا يتوفر تنزيل هذا المستند في وضع المعاينة الحالي.", 404);
+            }
+
+            const storedObject = await runtime.objectStorage.readObject(documentReference.storageKey);
+
+            if (!storedObject) {
+              throw new WashoffApiRequestError("تعذر العثور على الملف المطلوب.", 404);
+            }
+
+            response.statusCode = 200;
+            response.setHeader("Content-Type", `${documentReference.mimeType}; charset=binary`);
+            response.setHeader("Content-Length", String(storedObject.contentBytes.byteLength));
+            response.setHeader(
+              "Content-Disposition",
+              `inline; filename="${encodeURIComponent(documentReference.fileName)}"`,
+            );
+            response.end(storedObject.contentBytes);
           });
         } else if (method === "GET" && pathname === `${WASHOFF_API_BASE_PATH}/hotel-profile`) {
           sendJson(response, 200, {
@@ -673,6 +1015,10 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
                 resolveAuthorizedHotelId(caller, requestUrl.searchParams.get("hotelId") ?? undefined),
               ),
             ),
+          });
+        } else if (method === "GET" && pathname === `${WASHOFF_API_BASE_PATH}/hotel/billing`) {
+          sendJson(response, 200, {
+            data: await withRole(caller, ["hotel", "admin"], () => runtime.service.getHotelBillingData()),
           });
         } else if (method === "GET" && pathname === `${WASHOFF_API_BASE_PATH}/hotels`) {
           sendJson(response, 200, {
@@ -684,6 +1030,28 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
               runtime.repository.getProviderProfile(
                 resolveAuthorizedProviderId(caller, requestUrl.searchParams.get("providerId") ?? undefined),
               ),
+            ),
+          });
+        } else if (method === "GET" && pathname === `${WASHOFF_API_BASE_PATH}/provider/finance`) {
+          sendJson(response, 200, {
+            data: await withRole(caller, ["provider", "admin"], () => runtime.service.getProviderFinanceData()),
+          });
+        } else if (method === "GET" && pathname === `${WASHOFF_API_BASE_PATH}/provider/services`) {
+          sendJson(response, 200, {
+            data: await withRole(caller, ["provider", "admin"], () =>
+              runtime.repository.getProviderServiceManagement(
+                resolveAuthorizedProviderId(caller, requestUrl.searchParams.get("providerId") ?? undefined),
+              ),
+            ),
+          });
+        } else if (method === "POST" && pathname === `${WASHOFF_API_BASE_PATH}/provider/services`) {
+          const body = await readJsonBody<SubmitProviderServicePricingRequest>(request);
+          sendJson(response, 200, {
+            data: await withRole(caller, ["provider", "admin"], () =>
+              runtime.service.submitProviderServicePricing({
+                ...body,
+                providerId: resolveAuthorizedProviderId(caller, body.providerId),
+              }),
             ),
           });
         } else if (method === "GET" && pathname === `${WASHOFF_API_BASE_PATH}/providers`) {
@@ -701,6 +1069,120 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
           sendJson(response, 200, {
             data: await withRole(caller, ["admin"], () => runtime.repository.listIdentityAuditEvents()),
           });
+        } else if (method === "GET" && pathname === `${WASHOFF_API_BASE_PATH}/admin/services`) {
+          sendJson(response, 200, {
+            data: await withRole(caller, ["admin"], () =>
+              runtime.repository.getPlatformServiceCatalogAdminData(),
+            ),
+          });
+        } else if (
+          method === "POST" &&
+          pathname === `${WASHOFF_API_BASE_PATH}/admin/services/products`
+        ) {
+          const body = await readJsonBody<UpsertPlatformProductRequest>(request);
+          sendJson(response, 200, {
+            data: await withRole(caller, ["admin"], () => runtime.service.upsertPlatformProduct(body)),
+          });
+        } else if (method === "PATCH" && adminServiceMatrixAction) {
+          const body = await readJsonBody<UpdatePlatformServiceMatrixRequest>(request);
+          sendJson(response, 200, {
+            data: await withRole(caller, ["admin"], () =>
+              runtime.service.updatePlatformServiceMatrix({
+                ...body,
+                matrixRowId: adminServiceMatrixAction.matrixRowId,
+              }),
+            ),
+          });
+        } else if (
+          method === "GET" &&
+          pathname === `${WASHOFF_API_BASE_PATH}/admin/provider-pricing`
+        ) {
+          sendJson(response, 200, {
+            data: await withRole(caller, ["admin"], () => runtime.repository.getProviderPricingAdminData()),
+          });
+        } else if (method === "GET" && pathname === `${WASHOFF_API_BASE_PATH}/admin/finance/page`) {
+          sendJson(response, 200, {
+            data: await withRole(caller, ["admin"], () =>
+              runtime.service.getAdminFinancePage({
+                invoicePage: parsePositiveIntegerQueryValue(
+                  requestUrl.searchParams.get("invoicePage"),
+                  1,
+                ),
+                invoicePageSize: parsePositiveIntegerQueryValue(
+                  requestUrl.searchParams.get("invoicePageSize"),
+                  12,
+                ),
+                invoiceSearch: requestUrl.searchParams.get("invoiceSearch") ?? undefined,
+                invoiceStatus: requestUrl.searchParams.get("invoiceStatus") ?? undefined,
+                invoiceDate: requestUrl.searchParams.get("invoiceDate") ?? undefined,
+                statementPage: parsePositiveIntegerQueryValue(
+                  requestUrl.searchParams.get("statementPage"),
+                  1,
+                ),
+                statementPageSize: parsePositiveIntegerQueryValue(
+                  requestUrl.searchParams.get("statementPageSize"),
+                  12,
+                ),
+                statementSearch: requestUrl.searchParams.get("statementSearch") ?? undefined,
+                statementStatus: requestUrl.searchParams.get("statementStatus") ?? undefined,
+                statementDate: requestUrl.searchParams.get("statementDate") ?? undefined,
+              }),
+            ),
+          });
+        } else if (method === "GET" && pathname === `${WASHOFF_API_BASE_PATH}/admin/finance`) {
+          sendJson(response, 200, {
+            data: await withRole(caller, ["admin"], () => runtime.service.getAdminFinanceData()),
+          });
+        } else if (method === "POST" && adminProviderPricingAction) {
+          if (adminProviderPricingAction.action === "approve") {
+            const body = await readJsonBody<ApproveProviderServicePricingRequest>(request);
+            sendJson(response, 200, {
+              data: await withRole(caller, ["admin"], () =>
+                runtime.service.approveProviderServicePricing({
+                  offeringId: body.offeringId ?? adminProviderPricingAction.offeringId,
+                }),
+              ),
+            });
+          } else {
+            const body = await readJsonBody<RejectProviderServicePricingRequest>(request);
+            sendJson(response, 200, {
+              data: await withRole(caller, ["admin"], () =>
+                runtime.service.rejectProviderServicePricing({
+                  ...body,
+                  offeringId: adminProviderPricingAction.offeringId,
+                }),
+              ),
+            });
+          }
+        } else if (method === "POST" && adminFinanceAction) {
+          if (adminFinanceAction.entityType === "invoices" && adminFinanceAction.action === "collect") {
+            const body = await readJsonBody<MarkHotelInvoiceCollectedRequest>(request);
+            sendJson(response, 200, {
+              data: await withRole(caller, ["admin"], () =>
+                runtime.service.markHotelInvoiceCollected({
+                  ...body,
+                  invoiceId: adminFinanceAction.entityId,
+                  actorAccountId: caller.account?.id,
+                }),
+              ),
+            });
+          } else if (
+            adminFinanceAction.entityType === "provider-statements" &&
+            adminFinanceAction.action === "pay"
+          ) {
+            const body = await readJsonBody<MarkProviderStatementPaidRequest>(request);
+            sendJson(response, 200, {
+              data: await withRole(caller, ["admin"], () =>
+                runtime.service.markProviderStatementPaid({
+                  ...body,
+                  statementId: adminFinanceAction.entityId,
+                  actorAccountId: caller.account?.id,
+                }),
+              ),
+            });
+          } else {
+            throw new WashoffApiRequestError("إجراء التمويل الإداري المطلوب غير مدعوم.", 400);
+          }
         } else if (method === "GET" && pathname === `${WASHOFF_API_BASE_PATH}/admin/settings`) {
           sendJson(response, 200, {
             data: await withRole(caller, ["admin"], () => runtime.repository.getPlatformSettings()),
@@ -769,6 +1251,23 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
               caller,
               (requestUrl.searchParams.get("scope") as OrdersQueryScope | null) ?? null,
               requestUrl,
+            ),
+          });
+        } else if (method === "GET" && pathname === `${WASHOFF_API_BASE_PATH}/admin/orders`) {
+          sendJson(response, 200, {
+            data: await withRole(caller, ["admin"], () =>
+              runtime.service.listAdminOrdersPage({
+                page: parsePositiveIntegerQueryValue(requestUrl.searchParams.get("page"), 1),
+                pageSize: parsePositiveIntegerQueryValue(
+                  requestUrl.searchParams.get("pageSize"),
+                  20,
+                ),
+                search: requestUrl.searchParams.get("search") ?? undefined,
+                status: requestUrl.searchParams.get("status") ?? undefined,
+                providerId: requestUrl.searchParams.get("providerId") ?? undefined,
+                dateFrom: requestUrl.searchParams.get("dateFrom") ?? undefined,
+                dateTo: requestUrl.searchParams.get("dateTo") ?? undefined,
+              }),
             ),
           });
         } else if (method === "POST" && pathname === `${WASHOFF_API_BASE_PATH}/orders`) {
@@ -980,6 +1479,7 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
     } catch (error) {
       statusCode = resolveErrorStatusCode(error);
       const message = resolveErrorMessage(error);
+      const runtime = await options.getRuntime();
 
       if (error instanceof WashoffRateLimitError) {
         response.setHeader("Retry-After", String(error.retryAfterSeconds));
@@ -987,6 +1487,14 @@ export const createWashoffApiHandler = (options: WashoffApiHandlerOptions) => {
           method,
           path: pathname,
         });
+      }
+
+      if (
+        isWashoffApiAuthError(error) &&
+        (pathname === `${WASHOFF_API_BASE_PATH}/auth/session` ||
+          pathname === `${WASHOFF_API_BASE_PATH}/auth/logout`)
+      ) {
+        appendSetCookieHeader(response, buildExpiredSessionCookieValue(runtime));
       }
 
       if (isAuthPath(pathname)) {

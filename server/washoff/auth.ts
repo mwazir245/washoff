@@ -1,7 +1,9 @@
+import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
+import { readCookie } from "./http-cookies.ts";
 
 export type WashoffApiRole = "hotel" | "provider" | "admin" | "worker";
-export type WashoffAuthMode = "disabled" | "dev-header" | "session" | "session-or-dev-header";
+export type WashoffAuthMode = "disabled" | "dev-header" | "session";
 
 export interface WashoffResolvedSession {
   account: {
@@ -23,6 +25,7 @@ export interface WashoffSessionResolver {
 export interface WashoffApiAuthConfig {
   authMode: WashoffAuthMode;
   internalApiKey?: string;
+  sessionCookieName?: string;
   sessionResolver?: WashoffSessionResolver;
 }
 
@@ -56,20 +59,37 @@ const getHeader = (request: IncomingMessage, name: string) => {
 
 const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{10,512}$/;
 
+const constantTimeEquals = (left: string, right: string) => {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(leftBuffer, rightBuffer);
+};
+
 const isRole = (value: string | undefined): value is WashoffApiRole => {
   return value === "hotel" || value === "provider" || value === "admin" || value === "worker";
 };
 
-const resolveBearerToken = (request: IncomingMessage) => {
+export const resolveWashoffSessionTokenFromRequest = (
+  request: IncomingMessage,
+  sessionCookieName = "washoff_session",
+) => {
   const authorizationHeader = getHeader(request, "authorization");
 
   if (authorizationHeader && !authorizationHeader.startsWith("Bearer ")) {
     throw new WashoffApiAuthError("صيغة ترويسة Authorization غير صحيحة في طلب WashOff.", 400);
   }
 
-  const resolvedToken = authorizationHeader?.startsWith("Bearer ")
+  const bearerToken = authorizationHeader?.startsWith("Bearer ")
     ? authorizationHeader.slice("Bearer ".length).trim()
-    : getHeader(request, "x-washoff-session-token");
+    : undefined;
+  const headerToken = getHeader(request, "x-washoff-session-token");
+  const cookieToken = readCookie(request, sessionCookieName);
+  const resolvedToken = bearerToken ?? headerToken ?? cookieToken;
 
   if (!resolvedToken) {
     return undefined;
@@ -86,13 +106,9 @@ export const assertValidWashoffSessionToken = (sessionToken: string) => {
   return sessionToken;
 };
 
-const supportsSessionAuth = (authMode: WashoffAuthMode) => {
-  return authMode === "session" || authMode === "session-or-dev-header";
-};
+const supportsSessionAuth = (authMode: WashoffAuthMode) => authMode === "session";
 
-const supportsHeaderAuth = (authMode: WashoffAuthMode) => {
-  return authMode === "dev-header" || authMode === "session-or-dev-header";
-};
+const supportsHeaderAuth = (authMode: WashoffAuthMode) => authMode === "dev-header";
 
 export const resolveWashoffApiCaller = async (
   request: IncomingMessage,
@@ -107,14 +123,17 @@ export const resolveWashoffApiCaller = async (
 
   const internalApiKey = getHeader(request, "x-washoff-internal-key");
 
-  if (config.internalApiKey && internalApiKey === config.internalApiKey) {
+  if (config.internalApiKey && internalApiKey && constantTimeEquals(internalApiKey, config.internalApiKey)) {
     return {
       role: "worker",
       source: "internal-key",
     };
   }
 
-  const bearerToken = resolveBearerToken(request);
+  const bearerToken = resolveWashoffSessionTokenFromRequest(
+    request,
+    config.sessionCookieName,
+  );
 
   if (supportsSessionAuth(config.authMode) && bearerToken) {
     const resolvedSession = await config.sessionResolver?.resolveAccountSession(bearerToken);

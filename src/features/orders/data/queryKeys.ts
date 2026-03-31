@@ -3,10 +3,19 @@ export const platformQueryKeys = {
   activationTokenStatus: (token: string) => ["auth", "activation-token", token] as const,
   resetPasswordTokenStatus: (token: string) => ["auth", "reset-token", token] as const,
   hotelDashboard: ["dashboard", "hotel"] as const,
+  hotelBilling: ["hotel", "billing"] as const,
   providerDashboard: ["dashboard", "provider"] as const,
+  providerFinance: ["provider", "finance"] as const,
   adminDashboard: ["dashboard", "admin"] as const,
+  adminFinance: ["admin", "finance"] as const,
+  adminFinancePage: (params: Record<string, string | number | undefined>) =>
+    ["admin", "finance", "page", params] as const,
   adminOrders: ["admin", "orders"] as const,
+  adminOrdersPage: (params: Record<string, string | number | undefined>) =>
+    ["admin", "orders", "page", params] as const,
   adminMatching: ["admin", "matching"] as const,
+  adminServices: ["admin", "services"] as const,
+  adminProviderPricing: ["admin", "provider-pricing"] as const,
   adminOnboarding: ["admin", "onboarding"] as const,
   adminAccounts: ["admin", "accounts"] as const,
   identityAudit: ["admin", "identity-audit"] as const,
@@ -15,6 +24,7 @@ export const platformQueryKeys = {
   adminPlatformRuntime: ["admin", "platform-runtime"] as const,
   adminPlatformContent: ["admin", "platform-content"] as const,
   adminPlatformContentAudit: ["admin", "platform-content-audit"] as const,
+  providerServiceManagement: ["provider", "service-management"] as const,
   platformPageContent: (pageKey: string, language: "ar" | "en") =>
     ["platform-content", pageKey, language] as const,
   registrationServiceCatalog: ["registration", "service-catalog"] as const,

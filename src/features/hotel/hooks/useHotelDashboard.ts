@@ -9,6 +9,13 @@ export const useHotelDashboard = () => {
   });
 };
 
+export const useHotelBilling = () => {
+  return useQuery({
+    queryKey: platformQueryKeys.hotelBilling,
+    queryFn: () => getWashoffPlatformService().getHotelBillingData(),
+  });
+};
+
 export const useCreateHotelOrderMutation = () => {
   const queryClient = useQueryClient();
 
@@ -17,7 +24,10 @@ export const useCreateHotelOrderMutation = () => {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: platformQueryKeys.hotelDashboard }),
+        queryClient.invalidateQueries({ queryKey: platformQueryKeys.hotelBilling }),
         queryClient.invalidateQueries({ queryKey: platformQueryKeys.providerDashboard }),
+        queryClient.invalidateQueries({ queryKey: platformQueryKeys.providerFinance }),
+        queryClient.invalidateQueries({ queryKey: platformQueryKeys.adminFinance }),
         queryClient.invalidateQueries({ queryKey: platformQueryKeys.adminDashboard }),
       ]);
     },
@@ -35,7 +45,10 @@ export const useConfirmHotelOrderCompletionMutation = () => {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: platformQueryKeys.hotelDashboard }),
+        queryClient.invalidateQueries({ queryKey: platformQueryKeys.hotelBilling }),
         queryClient.invalidateQueries({ queryKey: platformQueryKeys.providerDashboard }),
+        queryClient.invalidateQueries({ queryKey: platformQueryKeys.providerFinance }),
+        queryClient.invalidateQueries({ queryKey: platformQueryKeys.adminFinance }),
         queryClient.invalidateQueries({ queryKey: platformQueryKeys.adminDashboard }),
       ]);
     },

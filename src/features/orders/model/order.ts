@@ -8,9 +8,16 @@ import type {
 } from "@/features/orders/model/common";
 import { OrderStatus } from "@/features/orders/model/lifecycle";
 import type { MatchingLog } from "@/features/orders/model/matching";
+import type { OrderFinancialSnapshot } from "@/features/orders/model/finance";
 import type { Settlement } from "@/features/orders/model/settlement";
-import type { SLAHistory } from "@/features/orders/model/sla";
+import type {
+  OrderProviderSlaSnapshot,
+  OrderRequiredSlaSnapshot,
+  OrderSlaSummary,
+  SLAHistory,
+} from "@/features/orders/model/sla";
 import { ServiceBillingUnit } from "@/features/orders/model/service";
+import type { SaudiCityId, SaudiDistrictId } from "@/features/orders/model/location-catalog";
 
 export enum OrderAssignmentMode {
   Auto = "auto",
@@ -25,7 +32,12 @@ export enum OrderPriority {
 export interface OrderPartySnapshot {
   id: string;
   displayName: LocalizedText;
+  cityId?: SaudiCityId;
   city: string;
+  districtId?: SaudiDistrictId;
+  district?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface OrderItem {
@@ -44,6 +56,9 @@ export interface OrderSlaWindow {
   pickupTargetAt?: ISODateString;
   deliveryTargetAt?: ISODateString;
   completionTargetAt?: ISODateString;
+  requiredSla?: OrderRequiredSlaSnapshot;
+  providerSla?: OrderProviderSlaSnapshot;
+  summary?: OrderSlaSummary;
 }
 
 export interface OrderStatusHistoryEntry {
@@ -60,6 +75,7 @@ export interface Order extends AuditFields {
   id: string;
   hotelId: string;
   hotelSnapshot: OrderPartySnapshot;
+  roomNumber?: string;
   providerId?: string;
   providerSnapshot?: OrderPartySnapshot;
   assignmentMode: OrderAssignmentMode;
@@ -82,6 +98,12 @@ export interface Order extends AuditFields {
   slaWindow: OrderSlaWindow;
   slaHistory: SLAHistory[];
   reassignmentEvents: ReassignmentEvent[];
+  hotelFinancialSnapshot?: OrderFinancialSnapshot;
+  providerFinancialSnapshot?: OrderFinancialSnapshot;
+  hotelInvoiceId?: string;
+  providerStatementId?: string;
+  billedAt?: ISODateString;
+  settledAt?: ISODateString;
   settlement?: Settlement;
 }
 
@@ -92,6 +114,7 @@ export interface CreateOrderItemInput {
 
 export interface CreateOrderInput {
   hotelId: string;
+  roomNumber: string;
   items: CreateOrderItemInput[];
   pickupAt: ISODateString;
   notesAr?: string;
@@ -102,8 +125,10 @@ export interface CreateOrderInput {
 
 export interface CreateHotelOrderInput {
   hotelId?: string;
-  serviceIds: string[];
-  itemCount: number;
+  roomNumber: string;
+  items: CreateOrderItemInput[];
+  serviceIds?: string[];
+  itemCount?: number;
   pickupAt: ISODateString;
   notes?: string;
   notesAr?: string;
